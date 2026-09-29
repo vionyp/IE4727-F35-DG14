@@ -1,0 +1,18 @@
+# Runtime logs (each person has their own)
+booknest/storage/*.log
+
+# Downloaded public domain texts: large, and re-downloaded by tools/build-seed.php when needed
+booknest/tools/cache/
+
+# Test run output
+booknest/tools/e2e-results.txt
+
+# Editor and OS clutter
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Course documents stay on your own computer, not in the repo
+*.pdf

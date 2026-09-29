@@ -1,0 +1,16 @@
+/* Print: clean black on white for order and booking confirmations, no navigation chrome. */
+@page { margin: 18mm; }
+
+* { background: #fff !important; color: #000 !important; box-shadow: none !important; text-shadow: none !important; }
+body { font: 11pt/1.5 Georgia, serif; }
+.site-header, .site-nav, .site-search, .skip-link, .flash-close, .row-controls, .reader-controls, .reader-help,
+.billboard-bg, .date-picker, .legend, .book-actions, .booking-cancel, form button, .btn, .icon-btn,
+.site-footer .footer-grid section:nth-child(2) { display: none !important; }
+a { text-decoration: underline; }
+.container { max-width: none; padding: 0; }
+.panel, .tile, .booking-item, .table-wrap { border: 1px solid #999 !important; break-inside: avoid; }
+.data-table th, .data-table td { border-bottom: 1px solid #bbb !important; }
+.row-track { display: flex; flex-wrap: wrap; overflow: visible; }
+.card-overlay { display: none !important; }
+.page { break-inside: avoid; border: 1px solid #ccc; margin-bottom: 8mm; }
+.site-footer { border-top: 1px solid #000; margin-top: 10mm; }
