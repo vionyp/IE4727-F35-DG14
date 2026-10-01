@@ -101,7 +101,7 @@ Mapped to features F1 to F10 of the project brief.
 
 | ID | Requirement |
 |---|---|
-| FR-07 | A search box on every page searches title, author and serial number. |
+| FR-07 | A search box on every page searches title, author, ISBN and serial number. |
 | FR-08 | The catalogue can be filtered by category and sorted by title, price (both directions), newest and rating. |
 | FR-09 | Typing in the "Refine" box filters the visible results instantly without reloading. |
 | FR-10 | An empty result shows the query and suggests categories to browse. |
@@ -111,7 +111,7 @@ Mapped to features F1 to F10 of the project brief.
 
 | ID | Requirement |
 |---|---|
-| FR-12 | The book page shows cover, title, author, category, year, pages, rating, price, stock state and synopsis. |
+| FR-12 | The book page shows cover, title, author, category, year, format, pages, ISBN, publisher, rating, price, stock state and synopsis. |
 | FR-13 | The book page offers Buy now, Add to cart, Read a sample and, for members, Save to shelf. |
 | FR-14 | The book page shows "You may also like" books from the same category. |
 | FR-15 | Viewing a book records it in a "Recently viewed" cookie (last 6 books). |
@@ -120,7 +120,7 @@ Mapped to features F1 to F10 of the project brief.
 
 | ID | Requirement |
 |---|---|
-| FR-16 | The reader shows 8 to 12 sample pages as a two page spread on desktop and a single page on phones. |
+| FR-16 | The reader shows a book's reading pages as a two page spread on desktop and a single page on phones: a real 10 page sample for public domain books, or a short preview written by BookNest (labelled as not an excerpt) for books in copyright. |
 | FR-17 | Pages turn by swipe or drag, arrow keys, clicking page edges and Previous/Next buttons, with a 3D turn. |
 | FR-18 | The reader shows a page counter and progress bar; the last page offers Buy now and Back to book. |
 | FR-19 | Without JavaScript, all pages are readable as a vertical scroll. |
@@ -171,6 +171,14 @@ Mapped to features F1 to F10 of the project brief.
 | FR-39 | Admins can edit price, stock, featured and staff pick flags, and delete books that have never been ordered. |
 | FR-40 | Admins can open or close study rooms. |
 | FR-41 | Admins see analytics built with GROUP BY: revenue by category, top 5 books, orders per day (14 days), bookings per room, busiest hours, members, average order value, payment success rate. |
+
+### F11 Help assistant
+
+| ID | Requirement |
+|---|---|
+| FR-44 | Every page offers a help assistant (Paige) that answers typed questions and quick question buttons about orders, study rooms, opening hours, delivery, payment, accounts and books. |
+| FR-45 | The assistant states that it is automated, never shows an order or booking to anyone but its owner, and offers staff contact when it cannot answer. |
+| FR-46 | Every question is logged with its topic so that staff can see, in the admin dashboard, what people ask and what was not answered. |
 
 ### F10 Cookies and request data
 

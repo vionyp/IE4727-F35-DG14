@@ -19,6 +19,35 @@ Final automated result: **44 of 44 E2E checks passed, 0 PHP errors logged**.
 
 ---
 
+## Re-run after the real catalogue (1 October 2026, XAMPP on Windows)
+
+| ID | Req | Feature | Input data | Expected output | Method | Actual result | Result |
+|---|---|---|---|---|---|---|---|
+| T46 | FR-12 | Book facts | 36 ISBNs looked up on Open Library | Title matches; page count, publisher and cover found | Script against openlibrary.org | 36 of 36 ISBNs resolve to the right title and have a cover. Open Library has no page count for *The Subtle Art* and *A Brief History of Time* (ours: 224 and 212) and files the *Educated* ISBN under a summary booklet; those three details are from our own knowledge, not verified | Pass with 3 notes |
+| T47 | FR-16 | Preview labelling | Open the reader for Atomic Habits (in copyright) and Frankenstein (public domain) | First says "BookNest preview ... not an excerpt"; second says "Free sample" | Browser screenshot | As expected: 6 page preview and 12 page sample | Pass |
+| T48 | FR-07 | ISBN search | `catalogue.php?q=9780735211292` | Atomic Habits | Browser | HTTP 200, one result | Pass |
+| T49 | AR-B3 | Cover fallback | Site with and without `assets/covers/real/` | Real covers when present, generated covers when not | E2E ran before the download; screenshots after | Works both ways | Pass |
+| T50 | all | Full regression | `tools/e2e-test.php` | 44 of 44 | E2E | 44 of 44 passed, 0 PHP errors, no test files left behind | Pass |
+| T51 | AR-R4 | Performance after the visual redesign | Lighthouse 12, desktop and phone profiles | No regression in accessibility; performance stays high | Lighthouse | Accessibility 100 and Best Practices 100 on all pages tested. **Desktop profile:** Home 96, Browse 98, Book 100, Reader 98, Study Rooms 99. **Slow phone profile:** Book 93, Reader 93, Browse about 75, Home about 65. The phone figures for Home and Browse are lower than before the real covers (96 and 99) because a sharp phone screen downloads the large cover files over a simulated slow network | Pass on desktop; phone noted |
+
+### Paige, the help assistant (1 October 2026)
+
+| ID | Req | Feature | Input data | Expected output | Method | Actual result | Result |
+|---|---|---|---|---|---|---|---|
+| T52 | FR-44 | Typed question | "What time do you close?" | Hours answer in the open chat panel | E2E | "We are open every day, 10:00 to 21:00..." shown, panel open | Pass |
+| T53 | FR-44 | Quick question button | "Delivery fees" | Delivery answer, earlier messages kept | E2E | Answer shown, conversation kept | Pass |
+| T54 | FR-45 | Order privacy | Visitor asks about another person's order number | Refused, no details | E2E | "I can only show an order to the person who placed it" | Pass |
+| T55 | FR-45 | Own order | Member asks "where is my order" | Their latest order summary | E2E | "Order #.. was placed on .." shown | Pass |
+| T56 | AR-S2 | Script injection and unknown question | `<script>alert(1)</script> can I bring my dog` | Shown as text, logged as unanswered | E2E | Escaped; one row with `answered = 0` | Pass |
+| T57 | AR-S3 | CSRF | Post without token | Rejected, nothing logged | E2E | Log row count unchanged | Pass |
+| T58 | FR-46 | Logging | Five questions | Five new rows in `assistant_log` | E2E | 5 rows | Pass |
+| T59 | FR-44 | Understanding | 40 realistic questions (`tools/assistant-test.php`) | Each lands on the expected topic | Script | First run 37 of 39: "any books about money?" not understood and "gift cards" mistaken for a payment card; both patterns fixed; now 40 of 40 | Pass after fix |
+
+The full end to end suite is now **51 checks, all passing**.
+
+The detailed results below were recorded on 28 September 2026 with the first catalogue; book
+titles, order numbers and amounts in them refer to that data.
+
 ## 1. Search, browse and serial lookup
 
 | ID | Req | Feature | Input data | Expected output | Method | Actual result | Result |

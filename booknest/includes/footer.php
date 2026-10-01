@@ -18,6 +18,7 @@ $status = library_status();
         <li><a href="<?= e(url('catalogue.php?sort=newest')) ?>">New arrivals</a></li>
         <li><a href="<?= e(url('rooms.php')) ?>">Book a study room</a></li>
         <li><a href="<?= e(url('add-book.php')) ?>">Suggest a book</a></li>
+        <li><a href="#assistant">Help: ask <?= e(ASSISTANT_NAME) ?></a></li>
         <li><a href="<?= e(url(current_user() ? 'account.php' : 'sign-in.php')) ?>"><?= current_user() ? 'My Account' : 'Sign in or join' ?></a></li>
       </ul>
     </section>
@@ -25,11 +26,12 @@ $status = library_status();
       <h2 id="footer-about">About this project</h2>
       <p>Built by <?= e(TEAM_NAMES) ?> for IE4727 Web Application Design.</p>
       <p>Questions? Write to <a href="mailto:<?= e(TEAM_EMAIL) ?>"><?= e(TEAM_EMAIL) ?></a>.</p>
-      <p>Covers and illustrations are original artwork made for this site.</p>
+      <p>The logo, illustrations and room plans are original artwork made for this site.</p>
     </section>
   </div>
   <div class="container footer-base">
-    <p>Public domain sample texts courtesy of Project Gutenberg.</p>
+    <p>Samples of classics are public domain texts courtesy of Project Gutenberg. Previews of other books are written by BookNest and are not excerpts.</p>
+    <p>Book cover images courtesy of Open Library; covers belong to their publishers.</p>
     <p>We use two small cookies: one remembers books you viewed, one remembers your email if you ask us to.</p>
     <p>A student project. Not affiliated with the National Library Board.</p>
   </div>

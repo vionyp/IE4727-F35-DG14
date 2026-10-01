@@ -30,11 +30,31 @@ function icon(string $name, int $size = 20): string
         . ($paths[$name] ?? '') . '</svg>';
 }
 
-// Returns a book cover image tag.
-function cover_img(array $book, string $class = '', bool $lazy = true, int $width = 400): string
+// Returns the asset path of a book's cover: the real cover downloaded by tools/fetch-covers.php
+// when it exists, otherwise the generated BookNest cover.
+// Pass $small = true for the light 180px version used by thumbnails and blurred backgrounds.
+function cover_file(array $book, bool $small = false): string
 {
-    return '<img class="' . e($class) . '" src="' . e(url('assets/' . $book['cover_path'])) . '" alt="' . e($book['cover_alt'])
-        . '" width="' . $width . '" height="' . (int) round($width * 1.5) . '"' . ($lazy ? ' loading="lazy"' : '') . ' decoding="async">';
+    $base = 'covers/real/' . basename($book['cover_path'], '.svg');
+    if ($small && is_file(APP_ROOT . '/assets/' . $base . '-m.jpg')) {
+        return $base . '-m.jpg';
+    }
+    return is_file(APP_ROOT . '/assets/' . $base . '.jpg') ? $base . '.jpg' : $book['cover_path'];
+}
+
+// Returns a book cover image tag. Thumbnails (200px or less) get the small file. With $card = true
+// the tag offers both sizes, so ordinary screens download the small one and sharp (2x) screens the
+// large one. Only a large, eagerly loaded cover (the hero or the book page) is marked high priority.
+function cover_img(array $book, string $class = '', bool $lazy = true, int $width = 400, bool $card = false): string
+{
+    $large = cover_file($book);
+    $small = cover_file($book, true);
+    $src = ($card || $width <= 200) ? $small : $large;
+    $srcset = ($card && $small !== $large)
+        ? ' srcset="' . e(url('assets/' . $small)) . ' 1x, ' . e(url('assets/' . $large)) . ' 2x"' : '';
+    $priority = $lazy ? ' loading="lazy"' : (($card || $width <= 200) ? '' : ' fetchpriority="high"');
+    return '<img class="' . e($class) . '" src="' . e(url('assets/' . $src)) . '"' . $srcset . ' alt="' . e($book['cover_alt'])
+        . '" width="' . $width . '" height="' . (int) round($width * 1.5) . '"' . $priority . ' decoding="async">';
 }
 
 // Returns a cover card for a book, with a quick info overlay on hover and focus.
@@ -42,7 +62,7 @@ function book_card(array $b, bool $lazy = true): string
 {
     return '<article class="card" data-title="' . e(mb_strtolower($b['title'])) . '" data-author="' . e(mb_strtolower($b['author'])) . '">'
         . '<a class="card-link" href="' . e(book_url((int) $b['id'])) . '">'
-        . '<span class="card-cover">' . cover_img($b, '', $lazy) . '<span class="card-overlay" aria-hidden="true">'
+        . '<span class="card-cover">' . cover_img($b, '', $lazy, 400, true) . '<span class="card-overlay" aria-hidden="true">'
         . '<span class="card-hook">' . e($b['hook']) . '</span><span class="card-cta">View details</span></span></span>'
         . '<span class="card-title">' . e($b['title']) . '</span></a>'
         . '<p class="card-author">' . e($b['author']) . '</p>'
@@ -89,6 +109,12 @@ function empty_state(string $title, string $text, string $actionsHtml = ''): str
     return '<div class="empty-state"><img src="' . e(url('assets/img/empty-shelf.svg')) . '" alt="" width="220" height="140">'
         . '<h2>' . e($title) . '</h2><p>' . e($text) . '</p>'
         . ($actionsHtml ? '<div class="empty-actions">' . $actionsHtml . '</div>' : '') . '</div>';
+}
+
+// Returns the right word for a book's reader text: a real excerpt is a sample, our own summary is a preview.
+function sample_word(array $book): string
+{
+    return ($book['sample_type'] ?? 'excerpt') === 'preview' ? 'preview' : 'sample';
 }
 
 // Returns a year for display, with BC years written out.

@@ -55,7 +55,7 @@ require __DIR__ . '/includes/header.php';
 ?>
 
 <?php if ($featured): ?>
-<section class="billboard" aria-labelledby="billboard-title" style="--cover: url('<?= e(url('assets/' . $featured['cover_path'])) ?>')">
+<section class="billboard" aria-labelledby="billboard-title" style="--cover: url('<?= e(url('assets/' . cover_file($featured, true))) ?>')">
   <div class="billboard-bg" aria-hidden="true"></div>
   <div class="container billboard-inner">
     <div class="billboard-copy">
@@ -70,7 +70,7 @@ require __DIR__ . '/includes/header.php';
           <input type="hidden" name="book_id" value="<?= (int) $featured['id'] ?>">
           <button class="btn btn-primary" type="submit"<?= $featured['stock'] > 0 ? '' : ' disabled' ?>>Buy now · <?= money($featured['price']) ?></button>
         </form>
-        <a class="btn btn-secondary" href="<?= e(url('read.php?id=' . $featured['id'])) ?>"><?= icon('book', 18) ?> Read a sample</a>
+        <a class="btn btn-secondary" href="<?= e(url('read.php?id=' . $featured['id'])) ?>"><?= icon('book', 18) ?> Read a <?= sample_word($featured) ?></a>
         <a class="btn-link" href="<?= e(book_url((int) $featured['id'])) ?>">About this book</a>
       </div>
     </div>
@@ -105,7 +105,7 @@ require __DIR__ . '/includes/header.php';
       <h2>Everything you need, three clicks away.</h2>
       <ol class="points" role="list">
         <li><span class="point-num">1</span><div><strong>Find it</strong><p>Search by title, author or serial number from any page.</p></div></li>
-        <li><span class="point-num">2</span><div><strong>Try it</strong><p>Read ten pages of any book before you decide.</p></div></li>
+        <li><span class="point-num">2</span><div><strong>Try it</strong><p>Read a sample or a short preview of any book before you decide.</p></div></li>
         <li><span class="point-num">3</span><div><strong>Keep it</strong><p>Buy without an account, or join to book study rooms and keep a shelf.</p></div></li>
       </ol>
     </div>

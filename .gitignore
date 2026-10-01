@@ -4,6 +4,10 @@ booknest/storage/*.log
 # Downloaded public domain texts: large, and re-downloaded by tools/build-seed.php when needed
 booknest/tools/cache/
 
+# Real cover images are copyrighted by their publishers: each teammate downloads their own
+# with tools/fetch-covers.php. Without them the site shows the generated covers.
+booknest/assets/covers/real/
+
 # Test run output
 booknest/tools/e2e-results.txt
 

@@ -35,7 +35,7 @@ $crumbs = [['Home', url()], [$book['category'], url('catalogue.php?category=' . 
 require __DIR__ . '/includes/header.php';
 ?>
 
-<article class="container book-detail" style="--cover: url('<?= e(url('assets/' . $book['cover_path'])) ?>')">
+<article class="container book-detail" style="--cover: url('<?= e(url('assets/' . cover_file($book, true))) ?>')">
   <div class="book-cover-wrap">
     <?= cover_img($book, 'book-cover', false, 360) ?>
   </div>
@@ -44,7 +44,7 @@ require __DIR__ . '/includes/header.php';
     <p class="eyebrow"><?= e($book['category']) ?></p>
     <h1><?= e($book['title']) ?></h1>
     <p class="book-author">by <?= e($book['author']) ?></p>
-    <p class="book-facts"><?= rating_html($book['rating']) ?><span><?= e(year_label((int) $book['published_year'])) ?></span><span><?= (int) $book['pages'] ?> pages</span></p>
+    <p class="book-facts"><?= rating_html($book['rating']) ?><span><?= e(year_label((int) $book['published_year'])) ?></span><span><?= e($book['format']) ?></span><span><?= (int) $book['pages'] ?> pages</span></p>
 
     <div class="buy-box">
       <p class="price"><?= money($book['price']) ?></p>
@@ -60,7 +60,7 @@ require __DIR__ . '/includes/header.php';
         <button class="btn btn-secondary" type="submit" name="action" value="add"<?= $book['stock'] > 0 ? '' : ' disabled' ?>><?= icon('cart', 18) ?> Add to cart</button>
       </form>
       <?php if ($pagesInSample): ?>
-      <a class="btn btn-ghost" href="<?= e(url('read.php?id=' . $book['id'])) ?>"><?= icon('book', 18) ?> Read a sample</a>
+      <a class="btn btn-ghost" href="<?= e(url('read.php?id=' . $book['id'])) ?>"><?= icon('book', 18) ?> Read a <?= sample_word($book) ?></a>
       <?php endif; ?>
       <?php if ($user): ?>
       <form action="<?= e(url('process/shelf.php')) ?>" method="post">
@@ -74,7 +74,7 @@ require __DIR__ . '/includes/header.php';
       <?php endif; ?>
     </div>
     <?php if ($book['stock'] <= 0): ?>
-    <p class="notice">This edition is out of stock. You can still read the sample, and save it to your shelf for later.</p>
+    <p class="notice">This edition is out of stock. You can still read the <?= sample_word($book) ?>, and save it to your shelf for later.</p>
     <?php endif; ?>
 
     <section class="synopsis" aria-labelledby="synopsis-title">
@@ -87,10 +87,13 @@ require __DIR__ . '/includes/header.php';
       <h2 id="details-title" class="visually-hidden">Details</h2>
       <dl class="spec-list">
         <div><dt>Serial number</dt><dd><?= e($book['serial_no']) ?></dd></div>
+        <?php if ($book['isbn']): ?><div><dt>ISBN</dt><dd><?= e($book['isbn']) ?></dd></div><?php endif; ?>
+        <?php if ($book['publisher']): ?><div><dt>Publisher</dt><dd><?= e($book['publisher']) ?></dd></div><?php endif; ?>
+        <div><dt>Format</dt><dd><?= e($book['format']) ?></dd></div>
         <div><dt>Category</dt><dd><a href="<?= e(url('catalogue.php?category=' . $book['category_slug'])) ?>"><?= e($book['category']) ?></a></dd></div>
         <div><dt>First published</dt><dd><?= e(year_label((int) $book['published_year'])) ?></dd></div>
         <div><dt>Length</dt><dd><?= (int) $book['pages'] ?> pages</dd></div>
-        <div><dt>Free sample</dt><dd><?= $pagesInSample ? $pagesInSample . ' pages' : 'Not available' ?></dd></div>
+        <div><dt><?= sample_word($book) === 'preview' ? 'BookNest preview' : 'Free sample' ?></dt><dd><?= $pagesInSample ? $pagesInSample . ' pages' . (sample_word($book) === 'preview' ? ', written by us' : ' from the book') : 'Not available' ?></dd></div>
         <div><dt>Delivery</dt><dd>Free over <?= money(FREE_DELIVERY_FROM) ?>, or collect at the library</dd></div>
       </dl>
     </section>

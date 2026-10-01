@@ -59,6 +59,8 @@ require __DIR__ . '/includes/header.php';
         <p class="muted"><?= e($found['author']) ?> · <?= e($found['category']) ?></p>
         <dl class="spec-list">
           <div><dt>Serial</dt><dd><?= e($found['serial_no']) ?></dd></div>
+          <div><dt>ISBN</dt><dd><?= e($found['isbn'] ?? 'None') ?></dd></div>
+          <div><dt>Publisher</dt><dd><?= e($found['publisher'] ?? 'Not given') ?></dd></div>
           <div><dt>Status</dt><dd><span class="pill is-<?= e($found['status']) ?>"><?= e(ucfirst($found['status'])) ?></span></dd></div>
           <div><dt>Stock</dt><dd><span class="pill <?= $stockClass ?>"><?= (int) $found['stock'] ?> · <?= e($stockText) ?></span></dd></div>
           <div><dt>Price</dt><dd><?= money($found['price']) ?></dd></div>
