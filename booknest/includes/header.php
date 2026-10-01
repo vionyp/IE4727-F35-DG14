@@ -62,8 +62,8 @@ $searchValue = is_page('catalogue.php') ? input($_GET, 'q', 100) : '';
     </nav>
 
     <form class="site-search" role="search" action="<?= e(url('catalogue.php')) ?>" method="get">
-      <label for="site-q" class="visually-hidden">Search by title, author or serial number</label>
-      <input type="search" id="site-q" name="q" value="<?= e($searchValue) ?>" placeholder="Search titles, authors, serials" maxlength="100" autocomplete="off">
+      <label for="site-q" class="visually-hidden">Search by title, author, ISBN or serial number</label>
+      <input type="search" id="site-q" name="q" value="<?= e($searchValue) ?>" placeholder="Search titles, authors, ISBN" maxlength="100" autocomplete="off">
       <button type="submit" class="search-btn"><?= icon('search', 18) ?><span class="visually-hidden">Search</span></button>
     </form>
 
@@ -77,6 +77,7 @@ $searchValue = is_page('catalogue.php') ? input($_GET, 'q', 100) : '';
       <?php else: ?>
       <a class="account-link" href="<?= e(url('sign-in.php')) ?>"<?= is_page('sign-in.php') ? ' aria-current="page"' : '' ?>><?= icon('user', 18) ?><span>Sign in</span></a>
       <?php endif; ?>
+      <?= assistant_widget() ?>
     </div>
   </div>
 </header>

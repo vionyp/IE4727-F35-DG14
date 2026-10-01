@@ -37,6 +37,16 @@ C:\xampp\mysql\bin\mysql.exe -uroot --default-character-set=utf8mb4 < sql\seed.s
 Import both again at any time to reset the demo. Dates in the seed are relative to the moment
 of import, so re-import on the morning of the demo for the freshest dashboard.
 
+## 4b. Download the book covers (once, needs internet)
+
+```
+C:\xampp\php\php.exe tools\fetch-covers.php
+```
+
+This saves the real cover of every book with an ISBN into `assets/covers/real/` (about 2 MB).
+The folder is not in Git, so each teammate runs this once. If you skip it, or a cover cannot be
+downloaded, the site shows its own generated cover for that book instead.
+
 ## 5. Open the site
 
 `http://localhost/booknest/`
@@ -50,7 +60,7 @@ of import, so re-import on the morning of the demo for the freshest dashboard.
 
 Useful demo facts: Aisha has a booking tomorrow at 14:00 (cancellable) and 4 books on her
 shelf; two member submissions wait for approval in the admin dashboard; *The Moonstone* is
-out of stock; `BNT-000123` is a good serial number to look up.
+out of stock; `BNT-000123` (The Da Vinci Code) is a good serial number to look up, and searching the ISBN `9780735211292` finds Atomic Habits.
 
 ## 6. Email (optional, for real delivery)
 

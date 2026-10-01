@@ -50,7 +50,46 @@
     });
   }
 
+  // Paige, the help assistant: sending a message reloads the page (no AJAX), so remember where
+  // the visitor was, show the newest message, and put the cursor back in the box.
+  function setupAssistant() {
+    var box = document.querySelector('[data-assistant]');
+    if (!box) { return; }
+    var form = box.querySelector('[data-assistant-form]');
+    var log = box.querySelector('[data-assistant-log]');
+    var input = box.querySelector('input[name="message"]');
+    var saved = null;
+    try { saved = window.sessionStorage.getItem('bn-scroll'); window.sessionStorage.removeItem('bn-scroll'); } catch (err) { saved = null; }
+    if (box.open) {
+      if (saved !== null) { window.scrollTo(0, parseInt(saved, 10) || 0); }
+      log.scrollTop = log.scrollHeight;
+      input.focus({ preventScroll: true });
+    }
+    // A link to #assistant anywhere on the site (for example in the footer) opens the panel.
+    function openFromHash() {
+      if (window.location.hash === '#assistant' && !box.open) { box.open = true; }
+    }
+    window.addEventListener('hashchange', openFromHash);
+    openFromHash();
+    form.addEventListener('submit', function () {
+      try { window.sessionStorage.setItem('bn-scroll', String(window.scrollY)); } catch (err) { /* storage may be blocked */ }
+    });
+    box.addEventListener('toggle', function () {
+      if (box.open) { log.scrollTop = log.scrollHeight; input.focus({ preventScroll: true }); }
+    });
+    document.addEventListener('click', function (event) {
+      if (box.open && !box.contains(event.target) && !event.target.closest('a[href="#assistant"]')) { box.open = false; }
+    });
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && box.open && box.contains(document.activeElement)) {
+        box.open = false;
+        box.querySelector('summary').focus();
+      }
+    });
+  }
+
   setupMenu();
   setupFlash();
   setupAutosubmit();
+  setupAssistant();
 })();

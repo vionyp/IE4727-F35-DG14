@@ -20,6 +20,7 @@ require_once __DIR__ . '/mail.php';
 require_once __DIR__ . '/rooms.php';
 require_once __DIR__ . '/covers.php';
 require_once __DIR__ . '/views.php';
+require_once __DIR__ . '/assistant.php';
 
 set_exception_handler('handle_fatal');
 start_secure_session();

@@ -1,7 +1,8 @@
 <?php
 // Builds sql/seed.sql, the book covers and the room plans.
 // Run from the project root:  C:\xampp\php\php.exe tools\build-seed.php
-// Sample texts are public domain works from Project Gutenberg (downloaded once into tools/cache).
+// Classics get real sample pages from Project Gutenberg (downloaded once into tools/cache);
+// modern, in copyright books get a short preview written by us (see tools/catalogue.php).
 declare(strict_types=1);
 
 require __DIR__ . '/../config/config.php';
@@ -10,143 +11,8 @@ require __DIR__ . '/../includes/covers.php';
 const WORDS_PER_PAGE = 125;
 const SAMPLE_PAGES = 10;
 
-$categories = [
-    ['Fiction', 'fiction', 'Novels about people, choices and the lives they make.'],
-    ['Mystery', 'mystery', 'Detectives, locked rooms and clues hiding in plain sight.'],
-    ['Science Fiction', 'science-fiction', 'Time machines, invaders and the stories that invented the future.'],
-    ['Non Fiction', 'non-fiction', 'True stories and big ideas that shaped how we think.'],
-    ['Young Readers', 'young-readers', 'Adventures for younger readers, and for everyone who still loves them.'],
-    ['Classics', 'classics', 'The long, rich novels that every reader meets eventually.'],
-];
-
-// [gutenberg id, start markers, title, author, category slug, year, pages, price, rating, stock,
-//  staff pick, featured, days since added, hook, synopsis]
-$books = [
-    // Fiction
-    [1342, ['It is a truth universally acknowledged, that a single man'], 'Pride and Prejudice', 'Jane Austen', 'fiction', 1813, 432, 12.90, 4.7, 18, 0, 0, 64,
-     'Five sisters, one proud gentleman, and a first impression that gets everything wrong.',
-     'When the wealthy Mr Bingley rents Netherfield Park, the Bennet household is thrown into happy chaos. Elizabeth, the sharpest of five sisters, takes an instant dislike to his friend Mr Darcy. Austen\'s comedy of manners is funny, warm and exact about how pride and quick judgement can blind even the cleverest people.'],
-    [1260, ['There was no possibility of taking a walk that day'], 'Jane Eyre', 'Charlotte Brontë', 'fiction', 1847, 532, 13.90, 4.6, 12, 1, 0, 88,
-     'An orphan governess, a house full of secrets, and a voice that refuses to be small.',
-     'Jane grows up unloved at Gateshead and survives the harsh school at Lowood before taking a post as governess at Thornfield Hall. There she meets the brooding Mr Rochester and hears strange laughter in the night. A fierce, intimate story about independence, conscience and what it costs to be true to yourself.'],
-    [514, ['be Christmas without any presents'], 'Little Women', 'Louisa May Alcott', 'fiction', 1868, 449, 11.90, 4.5, 20, 0, 0, 120,
-     'Four sisters, one winter without their father, and the dreams that carry them through.',
-     'Meg, Jo, Beth and Amy March grow up in Massachusetts while their father serves in the Civil War. Money is tight, tempers are short, and each sister has her own idea of a good life. Alcott\'s much loved novel is funny and tender about family, ambition and growing up.'],
-    [64317, ['In my younger and more vulnerable years'], 'The Great Gatsby', 'F. Scott Fitzgerald', 'fiction', 1925, 208, 12.50, 4.4, 15, 0, 0, 2,
-     'Green light, gold parties, and a man who believes he can repeat the past.',
-     'Nick Carraway rents a small house on Long Island next door to the mysterious Jay Gatsby, whose parties are the talk of the summer of 1922. Gatsby wants one thing: Daisy Buchanan, Nick\'s cousin, who lives across the bay. A short, dazzling novel about longing, money and the American dream.'],
-    [174, ['The studio was filled with the rich odour of roses'], 'The Picture of Dorian Gray', 'Oscar Wilde', 'fiction', 1890, 254, 10.90, 4.4, 9, 0, 0, 45,
-     'A portrait ages so its subject never has to. What could go wrong?',
-     'Young Dorian Gray is painted by an artist who adores him and charmed by a friend who dazzles him. When he wishes that his portrait would grow old instead of him, the wish comes true. Wilde\'s only novel is witty, gothic and sharply modern about vanity and consequence.'],
-    [768, ['I have just returned from a visit to my landlord'], 'Wuthering Heights', 'Emily Brontë', 'fiction', 1847, 416, 11.50, 4.2, 7, 0, 0, 150,
-     'On the Yorkshire moors, a love so wild it haunts two generations.',
-     'A stranger taking shelter at Wuthering Heights hears the story of Heathcliff, a foundling taken in by the Earnshaw family, and his passionate bond with Catherine. Their love turns to a revenge that reaches into the next generation. Stormy, strange and unforgettable.'],
-    // Mystery
-    [1661, ['To Sherlock Holmes she is always'], 'The Adventures of Sherlock Holmes', 'Arthur Conan Doyle', 'mystery', 1892, 307, 12.90, 4.8, 22, 0, 0, 70,
-     'Twelve cases, one violin, and the sharpest mind on Baker Street.',
-     'From a king\'s blackmail problem to a red headed man paid to copy the encyclopaedia, these twelve stories show Sherlock Holmes at his best, told by his loyal friend Dr Watson. Short, clever and endlessly rereadable, this is the perfect first Holmes.'],
-    [2852, ['Mr. Sherlock Holmes, who was usually very late in the mornings'], 'The Hound of the Baskervilles', 'Arthur Conan Doyle', 'mystery', 1902, 256, 11.90, 4.7, 14, 1, 0, 95,
-     'A family curse, a lonely moor, and the footprints of a gigantic hound.',
-     'When Sir Charles Baskerville is found dead on Dartmoor with a look of terror on his face, rumours of a spectral hound return. Holmes sends Watson to protect the young heir while he investigates. The most atmospheric Holmes novel, and one of the great mysteries.'],
-    [244, ['In the year 1878 I took my degree'], 'A Study in Scarlet', 'Arthur Conan Doyle', 'mystery', 1887, 188, 9.90, 4.3, 10, 0, 0, 132,
-     'The case where Holmes and Watson first meet, and a single word is written in blood.',
-     'Recently home from war, Dr Watson needs cheap lodgings and is introduced to an eccentric flatmate. Soon he is drawn into the case of a body found in an empty house in Brixton. The first Sherlock Holmes story, with a surprising second half set in the American West.'],
-    [863, ['The intense interest aroused in the public'], 'The Mysterious Affair at Styles', 'Agatha Christie', 'mystery', 1920, 296, 11.90, 4.4, 11, 0, 0, 4,
-     'Hercule Poirot\'s first case: poison, a country house, and far too many suspects.',
-     'Recovering from war wounds, Captain Hastings visits Styles Court just before its wealthy owner dies of strychnine poisoning. Luckily a Belgian refugee with a magnificent moustache is staying nearby. Agatha Christie\'s debut introduces Hercule Poirot and sets the rules for the classic whodunit.'],
-    [155, ['I address these lines'], 'The Moonstone', 'Wilkie Collins', 'mystery', 1868, 528, 13.50, 4.3, 0, 0, 0, 160,
-     'A sacred diamond, a birthday gift, and a theft no one can explain.',
-     'A great yellow diamond taken from an Indian shrine is left to Rachel Verinder on her eighteenth birthday. By morning it is gone. Told by a series of witnesses, each with their own blind spots, this is often called the first English detective novel, and it is still one of the most enjoyable.'],
-    [204, ['Between the silver ribbon of morning'], 'The Innocence of Father Brown', 'G. K. Chesterton', 'mystery', 1911, 272, 10.50, 4.2, 6, 0, 0, 9,
-     'A small, round priest who understands criminals because he listens to them.',
-     'Father Brown looks harmless, carries an umbrella and is always underestimated. In twelve playful and surprising stories he solves crimes through his understanding of human nature, often while the great detective Valentin is still looking for clues. Clever puzzles with a warm heart.'],
-    // Science Fiction
-    [84, ['You will rejoice to hear that no disaster'], 'Frankenstein', 'Mary Shelley', 'science-fiction', 1818, 280, 14.90, 4.6, 16, 0, 1, 30,
-     'A young scientist builds a life, then runs from it. Two hundred years later, we still argue about who the monster is.',
-     'Victor Frankenstein discovers how to give life to dead matter and creates a being, then abandons it in horror. Alone and rejected, the creature learns to speak, read and feel, and demands to know why he was made. Told through letters from an Arctic voyage, Shelley\'s novel invented science fiction and still asks the hardest questions about ambition and responsibility.'],
-    [35, ['The Time Traveller (for so it will be convenient to speak of him)'], 'The Time Machine', 'H. G. Wells', 'science-fiction', 1895, 118, 8.90, 4.3, 19, 1, 0, 58,
-     'A Victorian inventor travels to the year 802,701 and does not like what he finds.',
-     'Over dinner, the Time Traveller tells his guests a story they can hardly believe: a journey into the far future, where humanity has split into two strange races. Short and gripping, Wells\'s first novel is both an adventure and a sharp warning about class and complacency.'],
-    [36, ['No one would have believed in the last years'], 'The War of the Worlds', 'H. G. Wells', 'science-fiction', 1898, 192, 9.90, 4.4, 13, 0, 0, 77,
-     'No one would have believed it. Then the cylinders landed.',
-     'A cylinder falls on Horsell Common, and whatever is unscrewing its lid is not from Earth. Within days, Martian fighting machines stride across southern England. Told by an ordinary man trying to get home to his wife, this is the original alien invasion story and still one of the most tense.'],
-    [164, ['The year 1866 was signalised by a remarkable incident', 'The year 1866 was marked by a bizarre development'], 'Twenty Thousand Leagues Under the Seas', 'Jules Verne', 'science-fiction', 1870, 426, 12.90, 4.3, 8, 0, 0, 6,
-     'Aboard the Nautilus, a mysterious captain shows three captives the wonders of the deep.',
-     'A professor, his servant and a harpooner hunt a sea monster and find a submarine instead. Captain Nemo keeps them aboard the Nautilus for a voyage past coral forests, sunken ruins and the South Pole. A classic adventure full of wonder, with a captain nobody forgets.'],
-    [5230, ['The stranger came early in February'], 'The Invisible Man', 'H. G. Wells', 'science-fiction', 1897, 160, 8.90, 4.1, 10, 0, 0, 110,
-     'A stranger arrives in a snowstorm, wrapped in bandages. He is hiding more than his face.',
-     'The village of Iping is curious about the bandaged lodger at the Coach and Horses. When the truth comes out, a brilliant scientist who has made himself invisible turns from eccentric to dangerous. A fast, darkly funny thriller about power without accountability.'],
-    [62, ['I am a very old man'], 'A Princess of Mars', 'Edgar Rice Burroughs', 'science-fiction', 1912, 186, 9.50, 3.9, 9, 0, 0, 140,
-     'A Civil War soldier wakes up on Mars, where he can leap like a giant.',
-     'John Carter falls asleep in an Arizona cave and wakes on Barsoom, a dying Mars of green warriors, red cities and ancient canals. Stronger in the lighter gravity, he fights, falls in love with Dejah Thoris and changes a world. Pure pulp adventure that inspired generations of science fiction.'],
-    // Non Fiction
-    [2680, ['Of my grandfather Verus', 'From my grandfather Verus'], 'Meditations', 'Marcus Aurelius', 'non-fiction', 180, 254, 10.90, 4.6, 24, 1, 0, 50,
-     'The private notebook of a Roman emperor, trying every day to be a better person.',
-     'Written in camp during military campaigns and never meant for publication, the Meditations are Marcus Aurelius reminding himself how to live: calmly, justly, and with attention to what is in his control. Short entries, easy to dip into, and surprisingly useful for modern life.'],
-    [205, ['When I wrote the following pages'], 'Walden', 'Henry David Thoreau', 'non-fiction', 1854, 352, 11.90, 4.1, 8, 0, 0, 8,
-     'Two years in a cabin by a pond, and a lifetime of questions about how to live.',
-     'In 1845 Thoreau built a small cabin by Walden Pond and lived there simply, to see what life really required. His account mixes practical detail, close observation of nature and sharp criticism of busy modern life. A founding book of the simple living and environmental movements.'],
-    [132, ['said: The art of war is of vital importance'], 'The Art of War', 'Sun Tzu', 'non-fiction', -500, 122, 7.90, 4.4, 30, 0, 0, 100,
-     'Thirteen short chapters on strategy that people still quote in boardrooms.',
-     'Attributed to the general Sun Tzu, this ancient Chinese text sets out how to win with the least fighting: know yourself, know your opponent, and choose your ground. Translated by Lionel Giles, it is brief, direct and endlessly applied to business, sport and everyday decisions.'],
-    [23, ['I was born in Tuckahoe'], 'Narrative of the Life of Frederick Douglass', 'Frederick Douglass', 'non-fiction', 1845, 144, 8.90, 4.8, 12, 1, 0, 36,
-     'Born into slavery, he taught himself to read and wrote his way to freedom.',
-     'Frederick Douglass describes his childhood on a Maryland plantation, the cruelty he witnessed, and the moment he understood that reading was the path to freedom. Written after his escape, this powerful and precise memoir became one of the most important books of the abolitionist movement.'],
-    [148, ['I have ever had pleasure in obtaining'], 'The Autobiography of Benjamin Franklin', 'Benjamin Franklin', 'non-fiction', 1791, 196, 9.90, 4.2, 11, 0, 0, 125,
-     'A printer\'s apprentice becomes a scientist, writer and founder, and tells you how.',
-     'Franklin writes to his son about his rise from a runaway apprentice in Boston to a successful printer in Philadelphia, including his famous plan to practise thirteen virtues. Frank, practical and often funny, it is one of the first great self improvement books.'],
-    [1228, ['When on board H.M.S.'], 'On the Origin of Species', 'Charles Darwin', 'non-fiction', 1859, 502, 15.90, 4.5, 6, 0, 0, 3,
-     'The book that explained how life changes, one small variation at a time.',
-     'Drawing on pigeons, barnacles, fossils and his voyage on the Beagle, Darwin argues that species evolve through natural selection. Careful, modest and packed with evidence, the Origin changed science forever and is more readable than its reputation suggests.'],
-    // Young Readers
-    [11, ['Alice was beginning to get very tired'], 'Alice\'s Adventures in Wonderland', 'Lewis Carroll', 'young-readers', 1865, 128, 9.90, 4.6, 25, 0, 0, 40,
-     'Down the rabbit hole, where nothing makes sense and everything is curious.',
-     'Bored on a riverbank, Alice follows a White Rabbit with a pocket watch and tumbles into Wonderland. There she grows and shrinks, argues with a caterpillar, attends a mad tea party and plays croquet with flamingos. Playful nonsense that readers of every age return to.'],
-    [16, ['All children, except one, grow up'], 'Peter Pan', 'J. M. Barrie', 'young-readers', 1911, 192, 9.50, 4.4, 17, 0, 0, 84,
-     'Second star to the right, and straight on till morning.',
-     'One night Peter Pan flies into the Darling children\'s nursery looking for his shadow, and takes Wendy, John and Michael to Neverland. There are mermaids, lost boys and Captain Hook, who has never forgiven Peter for his hand. Magical, funny and a little sad about growing up.'],
-    [55, ['Dorothy lived in the midst of the great Kansas prairies'], 'The Wonderful Wizard of Oz', 'L. Frank Baum', 'young-readers', 1900, 154, 9.50, 4.3, 14, 0, 0, 5,
-     'A cyclone, a yellow brick road, and three friends looking for what they already have.',
-     'A Kansas cyclone carries Dorothy and her dog Toto to the land of Oz. To get home she must reach the Emerald City, and on the way she meets a Scarecrow, a Tin Woodman and a Cowardly Lion, each with a wish of their own. The original American fairy tale.'],
-    [113, ['When Mary Lennox was sent to Misselthwaite Manor'], 'The Secret Garden', 'Frances Hodgson Burnett', 'young-readers', 1911, 288, 10.50, 4.5, 13, 1, 0, 66,
-     'A locked garden, a hidden key, and a lonely girl who brings them both back to life.',
-     'Orphaned Mary Lennox is sent to her uncle\'s gloomy house on the Yorkshire moors. She hears crying in the corridors and learns of a garden that has been locked for ten years. As Mary finds her way in, the garden and the people around her begin to heal.'],
-    [120, ['Squire Trelawney, Dr. Livesey, and the rest'], 'Treasure Island', 'Robert Louis Stevenson', 'young-readers', 1883, 292, 10.90, 4.5, 16, 0, 0, 105,
-     'A map, a one legged cook, and the sea story that invented pirates as we know them.',
-     'When an old sea captain dies at the Admiral Benbow inn, young Jim Hawkins finds a treasure map in his chest. Soon he is sailing to a distant island with a crew that includes the charming and dangerous Long John Silver. Adventure storytelling at its very best.'],
-    [289, ['The Mole had been working very hard all the morning'], 'The Wind in the Willows', 'Kenneth Grahame', 'young-readers', 1908, 256, 10.50, 4.4, 12, 0, 0, 11,
-     'Messing about in boats with Mole, Rat, Badger and the terribly excitable Toad.',
-     'Mole abandons his spring cleaning and discovers the river, where he befriends the Water Rat. Together with wise Badger they try to keep the reckless Mr Toad out of trouble, with limited success. Gentle, funny and full of the English countryside.'],
-    // Classics
-    [1400, ['family name being Pirrip'], 'Great Expectations', 'Charles Dickens', 'classics', 1861, 544, 13.90, 4.5, 10, 1, 0, 90,
-     'A boy meets a convict in a graveyard, and his whole life changes.',
-     'Pip, an orphan raised by his sister and her kind husband Joe, is given money by a secret benefactor and sent to London to become a gentleman. Along the way he meets the bitter Miss Havisham and the beautiful, cold Estella. Dickens at his finest: funny, dark and deeply moving.'],
-    [345, ['Left Munich at'], 'Dracula', 'Bram Stoker', 'classics', 1897, 418, 12.90, 4.5, 15, 0, 0, 48,
-     'A solicitor travels to Transylvania to sell a house. His client has other plans.',
-     'Jonathan Harker visits Count Dracula\'s castle to finalise a property sale and soon realises he is a prisoner. When the Count arrives in England, a small group led by Professor Van Helsing must stop him. Told through diaries, letters and newspaper clippings, it is still genuinely creepy.'],
-    [2701, ['Call me Ishmael'], 'Moby Dick', 'Herman Melville', 'classics', 1851, 720, 15.90, 4.0, 8, 0, 0, 170,
-     'Call me Ishmael. One captain, one white whale, one obsession.',
-     'Ishmael signs on to the whaling ship Pequod and discovers that Captain Ahab has one goal: to hunt down the white whale that took his leg. Part adventure, part encyclopaedia of whaling, part philosophy, Melville\'s huge novel is strange, ambitious and unlike anything else.'],
-    [98, ['It was the best of times'], 'A Tale of Two Cities', 'Charles Dickens', 'classics', 1859, 448, 12.90, 4.4, 9, 0, 0, 115,
-     'The best of times, the worst of times: London, Paris and a revolution.',
-     'Doctor Manette is released after eighteen years in the Bastille and reunited with his daughter Lucie in London. But the French Revolution is coming, and their lives become tangled with an aristocrat, a lawyer who has given up on himself, and Madame Defarge, who never forgets.'],
-    [2554, ['On an exceptionally hot evening early in July'], 'Crime and Punishment', 'Fyodor Dostoevsky', 'classics', 1866, 576, 14.50, 4.6, 7, 0, 0, 1,
-     'A student commits a murder to prove a theory, then has to live with himself.',
-     'Raskolnikov, poor and feverish in St Petersburg, convinces himself that an extraordinary man may break moral law. After he kills a pawnbroker, guilt, fear and a patient detective close in. A psychological thriller and one of the great novels of conscience, in the translation by Constance Garnett.'],
-    [219, ['The Nellie, a cruising yawl'], 'Heart of Darkness', 'Joseph Conrad', 'classics', 1899, 96, 8.50, 4.0, 11, 1, 0, 135,
-     'A journey up the Congo river to find a man who has gone too far.',
-     'On a boat on the Thames, Marlow tells of his voyage into Central Africa for a Belgian trading company, and of Kurtz, the ivory agent everyone talks about. A short, intense and troubling novella about colonialism and the darkness inside people who call themselves civilised.'],
-];
-
-// Member submissions waiting for approval: [gid, markers, title, author, cat, year, pages, price, stock, added_by email, hook, synopsis]
-$pending = [
-    [45, ['Mrs. Rachel Lynde lived just where the Avonlea main road'], 'Anne of Green Gables', 'L. M. Montgomery', 'young-readers', 1908, 320, 10.90, 6, 'aisha@localhost',
-     'They asked for a boy. They got Anne, with an e.',
-     'Elderly siblings Matthew and Marilla Cuthbert send for an orphan boy to help on their farm on Prince Edward Island, and a talkative red haired girl arrives instead. Anne\'s imagination, mistakes and big heart slowly win over the whole town of Avonlea.'],
-    [236, ['of a very warm evening in the Seeonee hills'], 'The Jungle Book', 'Rudyard Kipling', 'young-readers', 1894, 212, 9.90, 5, 'ben@localhost',
-     'A boy raised by wolves, taught by a bear and a panther, hunted by a tiger.',
-     'Mowgli is adopted by a wolf pack in the Indian jungle and taught its law by Baloo the bear and Bagheera the panther, while Shere Khan the tiger waits. The book also includes other animal tales, such as the brave mongoose Rikki-tikki-tavi.'],
-];
+// Categories, modern books, classics and pending member submissions.
+require __DIR__ . '/catalogue.php';
 
 $users = [
     ['Grace Lim', 'admin@localhost', 'Admin123!', 'admin', 400],
@@ -351,17 +217,35 @@ foreach ($users as $i => [$name, $email, $pw, $role, $daysAgo]) {
 }
 $sql[] = "INSERT INTO users (id, full_name, email, password_hash, role, created_at) VALUES\n  " . implode(",\n  ", $rows) . ";\n";
 
-// Books (approved, then pending)
+// Books: modern titles first (written previews), then classics and pending books (real excerpts).
 $all = [];
-foreach ($books as $b) {
-    $all[] = ['gid' => $b[0], 'markers' => $b[1], 'title' => $b[2], 'author' => $b[3], 'cat' => $b[4], 'year' => $b[5],
-              'pages' => $b[6], 'price' => $b[7], 'rating' => $b[8], 'stock' => $b[9], 'staff' => $b[10], 'featured' => $b[11],
-              'days' => $b[12], 'hook' => $b[13], 'synopsis' => $b[14], 'status' => 'approved', 'by' => null];
+foreach ($modern as $b) {
+    $all[] = $b + ['status' => 'approved', 'by' => null, 'gid' => null, 'markers' => []];
+}
+foreach ($classics as $b) {
+    $all[] = ['gid' => $b[0], 'markers' => $b[1], 'title' => $b[2], 'author' => $b[3], 'cat' => 'classics', 'year' => $b[4],
+              'pages' => $b[5], 'price' => $b[6], 'rating' => $b[7], 'stock' => $b[8], 'staff' => $b[9], 'featured' => 0,
+              'days' => $b[10], 'hook' => $b[11], 'synopsis' => $b[12], 'status' => 'approved', 'by' => null,
+              'isbn' => null, 'publisher' => 'BookNest Classics', 'format' => 'Paperback'];
 }
 foreach ($pending as $b) {
     $all[] = ['gid' => $b[0], 'markers' => $b[1], 'title' => $b[2], 'author' => $b[3], 'cat' => $b[4], 'year' => $b[5],
               'pages' => $b[6], 'price' => $b[7], 'rating' => 0.0, 'stock' => $b[8], 'staff' => 0, 'featured' => 0,
-              'days' => 1, 'hook' => $b[10], 'synopsis' => $b[11], 'status' => 'pending', 'by' => $userIds[$b[9]]];
+              'days' => 1, 'hook' => $b[10], 'synopsis' => $b[11], 'status' => 'pending', 'by' => $userIds[$b[9]],
+              'isbn' => null, 'publisher' => null, 'format' => 'Paperback'];
+}
+
+// Writes the preview pages for a book that is still in copyright. Every word is ours, not the author's.
+function preview_pages(array $b): array
+{
+    return [
+        "# About this preview\n\n" . $b['title'] . ' is still in copyright, so BookNest does not show pages from the book itself.'
+            . " This short preview was written by our librarians to help you decide whether it is for you.\n\n" . $b['hook'],
+        "# What it is about\n\n" . $b['synopsis'],
+        "# Three ideas you will meet\n\n" . implode("\n\n", $b['ideas']),
+        "# Is it for you?\n\n" . $b['audience'] . "\n\n" . $b['format'] . ', ' . $b['pages'] . ' pages. Published by '
+            . $b['publisher'] . '. First published in ' . $b['year'] . '. ISBN ' . $b['isbn'] . '.',
+    ];
 }
 
 $rows = [];
@@ -369,17 +253,21 @@ $report = [];
 foreach ($all as $i => $b) {
     $id = $i + 1;
     $serial = sprintf('BNT-%06d', 100 + $id);
-    $pages = paginate(opening_paragraphs(strip_gutenberg(gutenberg_text($b['gid'])), $b['markers']));
+    $isExcerpt = $b['gid'] !== null;
+    $pages = $isExcerpt
+        ? paginate(opening_paragraphs(strip_gutenberg(gutenberg_text($b['gid'])), $b['markers']))
+        : preview_pages($b);
     $sample = implode("\n---PAGE---\n", $pages);
+    // A generated cover is always written; a real cover in assets/covers/real/ replaces it when present.
     $cover = write_cover($serial, $b['title'], $b['author'], $id, $catNames[$b['cat']]);
-    $alt = 'Cover of ' . $b['title'] . ' by ' . $b['author'] . ': title lettering on a geometric design';
-    $report[] = sprintf('%2d %s %-42s pages=%d first="%s"', $id, $serial, mb_substr($b['title'], 0, 42), count($pages),
-        mb_substr(str_replace("\n", ' ', $pages[0] ?? ''), 0, 60));
-    $rows[] = '(' . implode(', ', [$id, q($serial), q($b['title']), q($b['author']), $catIds[$b['cat']], q($b['hook']),
-        q($b['synopsis']), q($sample), $b['price'], $b['rating'], $b['year'], $b['pages'], $b['stock'], q($cover), q($alt),
+    $alt = 'Cover of ' . $b['title'] . ' by ' . $b['author'];
+    $report[] = sprintf('%2d %s %-44s %s pages=%d', $id, $serial, mb_substr($b['title'], 0, 44), $isExcerpt ? 'excerpt' : 'preview', count($pages));
+    $rows[] = '(' . implode(', ', [$id, q($serial), q($b['isbn']), q($b['title']), q($b['author']), q($b['publisher']), q($b['format']),
+        $catIds[$b['cat']], q($b['hook']), q($b['synopsis']), q($sample), q($isExcerpt ? 'excerpt' : 'preview'),
+        $b['price'], $b['rating'], $b['year'], $b['pages'], $b['stock'], q($cover), q($alt),
         $b['featured'], $b['staff'], q($b['status']), $b['by'] ?? 'NULL', "NOW() - INTERVAL {$b['days']} DAY - INTERVAL " . ($id * 37 % 600) . ' MINUTE']) . ')';
 }
-$sql[] = "INSERT INTO books (id, serial_no, title, author, category_id, hook, synopsis, sample_text, price, rating, published_year, pages, stock, cover_path, cover_alt, is_featured, is_staff_pick, status, added_by, created_at) VALUES\n  "
+$sql[] = "INSERT INTO books (id, serial_no, isbn, title, author, publisher, format, category_id, hook, synopsis, sample_text, sample_type, price, rating, published_year, pages, stock, cover_path, cover_alt, is_featured, is_staff_pick, status, added_by, created_at) VALUES\n  "
     . implode(",\n  ", $rows) . ";\n";
 
 // Rooms and their floor plans
@@ -507,6 +395,27 @@ $sql[] = "INSERT INTO room_bookings (room_id, user_id, booking_date, start_time,
 $shelf = [[$aisha, 1], [$aisha, 13], [$aisha, 25], [$aisha, 32], [$ben, 7], [$ben, 14], [$userIds['chloe@localhost'], 2]];
 $sql[] = "INSERT INTO shelf (user_id, book_id, added_at) VALUES\n  "
     . implode(",\n  ", array_map(fn($s) => "({$s[0]}, {$s[1]}, NOW() - INTERVAL " . ($s[1] % 9) . ' DAY)', $shelf)) . ";\n";
+
+// Questions asked to Paige over the last two weeks, so the admin dashboard has something to show.
+$asked = [
+    ['What time do you close today?', 'hours', 1], ['Opening hours', 'hours', 1], ['Where is my order?', 'order', 1],
+    ['where is order 31', 'order', 1], ['Book a study room', 'rooms', 1], ['how do i cancel my room booking', 'rooms', 1],
+    ['Delivery fees', 'delivery', 1], ['do you deliver to Jurong', 'delivery', 1], ['Do you have Atomic Habits?', 'book-search', 1],
+    ['price of sapiens', 'book-search', 1], ['Recommend a book', 'recommend', 1], ['recommend a thriller', 'recommend', 1],
+    ['my payment failed', 'payment', 1], ['I forgot my password', 'account', 1], ['Talk to a person', 'contact', 1],
+    ['can i return a book', 'refund', 1], ['Do you sell gift cards?', 'unknown', 0], ['is there parking nearby', 'unknown', 0],
+    ['can I bring coffee into the study rooms', 'rooms', 1], ['do you buy second hand books', 'unknown', 0],
+    ['are you a robot', 'about', 1], ['can I print here', 'unknown', 0],
+];
+$rows = [];
+foreach ($asked as $i => [$question, $intent, $answered]) {
+    $times = $answered ? mt_rand(1, 4) : 1;
+    for ($k = 0; $k < $times; $k++) {
+        $uid = mt_rand(0, 2) ? $members[mt_rand(0, count($members) - 1)] : 'NULL';
+        $rows[] = "($uid, " . q($question) . ', ' . q($intent) . ", $answered, NOW() - INTERVAL " . mt_rand(0, 13) . ' DAY - INTERVAL ' . mt_rand(10, 600) . ' MINUTE)';
+    }
+}
+$sql[] = "INSERT INTO assistant_log (user_id, question, intent, answered, created_at) VALUES\n  " . implode(",\n  ", $rows) . ";\n";
 
 file_put_contents(APP_ROOT . '/sql/seed.sql', implode("\n", $sql));
 

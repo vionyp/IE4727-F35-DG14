@@ -29,8 +29,8 @@ if ($category) {
 }
 if ($q !== '') {
     $like = '%' . addcslashes($q, '%_\\') . '%';
-    $where[] = '(b.title LIKE ? OR b.author LIKE ? OR b.serial_no LIKE ?)';
-    array_push($params, $like, $like, $like);
+    $where[] = '(b.title LIKE ? OR b.author LIKE ? OR b.serial_no LIKE ? OR b.isbn LIKE ?)';
+    array_push($params, $like, $like, $like, $like);
 }
 $books = db_all('SELECT ' . card_columns() . ' FROM books b WHERE ' . implode(' AND ', $where)
     . ' ORDER BY ' . $sorts[$sort][1], $params);
@@ -56,7 +56,7 @@ function catalogue_link(array $change): string
 
 $heading = $q !== '' ? 'Results for "' . $q . '"' : ($category ? $category['name'] : 'Browse the collection');
 $page_title = $q !== '' ? 'Search: ' . $q : ($category ? $category['name'] : 'Browse');
-$page_desc = 'Browse and search the BookNest collection by title, author, category or serial number.';
+$page_desc = 'Browse and search the BookNest collection by title, author, category, ISBN or serial number.';
 $body_class = 'page-catalogue';
 $scripts = ['search-filter.js'];
 $crumbs = [['Home', url()], ['Browse', $category || $q !== '' ? url('catalogue.php') : null]];
@@ -114,6 +114,9 @@ $n = count($books);
       <p class="muted"><?= e($serialBook['author']) ?></p>
       <dl class="spec-list">
         <div><dt>Serial number</dt><dd><?= e($serialBook['serial_no']) ?></dd></div>
+        <div><dt>ISBN</dt><dd><?= e($serialBook['isbn'] ?? 'None') ?></dd></div>
+        <div><dt>Publisher</dt><dd><?= e($serialBook['publisher'] ?? 'Not given') ?></dd></div>
+        <div><dt>Format</dt><dd><?= e($serialBook['format']) ?></dd></div>
         <div><dt>Status</dt><dd><span class="pill is-<?= e($serialBook['status']) ?>"><?= e(ucfirst($serialBook['status'])) ?></span></dd></div>
         <div><dt>Stock</dt><dd><span class="pill <?= $stockClass ?>"><?= (int) $serialBook['stock'] ?> copies · <?= e($stockText) ?></span></dd></div>
         <div><dt>Copies sold</dt><dd><?= (int) $serialBook['sold'] ?></dd></div>
@@ -138,7 +141,7 @@ $n = count($books);
   <?php if ($books): ?>
   <div class="card-grid" data-filter-grid>
     <?php foreach ($books as $i => $b): ?>
-    <?= book_card($b, $i > 11) ?>
+    <?= book_card($b, $i > 5) ?>
     <?php endforeach; ?>
   </div>
   <div data-filter-empty hidden>
@@ -149,7 +152,7 @@ $n = count($books);
       $q !== '' ? 'No results for "' . $q . '"' : 'No books here yet',
       'Check the spelling, try an author\'s surname, or browse a category instead. Can\'t find a book we should have? Suggest it.',
       '<a class="btn btn-secondary btn-sm" href="' . e(url('catalogue.php?category=classics')) . '">Browse Classics</a>'
-      . '<a class="btn btn-secondary btn-sm" href="' . e(url('catalogue.php?category=mystery')) . '">Browse Mystery</a>'
+      . '<a class="btn btn-secondary btn-sm" href="' . e(url('catalogue.php?category=mystery-thriller')) . '">Browse Mystery and Thriller</a>'
       . '<a class="btn btn-primary btn-sm" href="' . e(url('add-book.php')) . '">Suggest a book</a>'
   ) ?>
   <?php endif; ?>

@@ -344,6 +344,29 @@ check('T37', 'Dashboard revenue matches a manual SUM query', str_contains($r['bo
 $f = $admin->submit('process/admin-action.php', ['action' => 'delete', 'id' => '13']);
 check('T39b', 'A book with orders cannot be deleted', str_contains($f['flash'], 'kept for the sales records') && db_value('SELECT 1 FROM books WHERE id = 13'), $f['flash']);
 
+// ---- Paige, the help assistant ---------------------------------------------------------------------
+$p = new Client('paige');
+$logged = (int) db_value('SELECT COUNT(*) FROM assistant_log');
+$f = $p->submit('process/assistant.php', ['message' => 'What time do you close?']);
+check('T52', 'Assistant answers opening hours on the page', str_contains($f['page']['body'], 'We are open every day, 10:00 to 21:00')
+    && str_contains($f['page']['body'], '<details class="assistant" id="assistant" open'), 'Reply shown in the open chat panel');
+$f = $p->submit('process/assistant.php', ['quick' => 'Delivery fees']);
+check('T53', 'Assistant quick question button works', str_contains($f['page']['body'], 'Delivery within Singapore costs'), 'Delivery answer shown; earlier messages kept: '
+    . (str_contains($f['page']['body'], 'What time do you close?') ? 'yes' : 'no'));
+$privateOrder = (int) db_value('SELECT id FROM orders WHERE user_id IS NOT NULL ORDER BY id LIMIT 1');
+$f = $p->submit('process/assistant.php', ['message' => "where is order $privateOrder"]);
+check('T54', 'Assistant will not show an order to a stranger', str_contains($f['page']['body'], 'only show an order to the person who placed it')
+    && !str_contains($f['page']['body'], "Order #$privateOrder was placed"), 'Refused politely, no order details shown');
+$f = $aisha->submit('process/assistant.php', ['message' => 'where is my order']);
+check('T55', 'Assistant shows a member their own latest order', (bool) preg_match('/Order #\d+ was placed on/', $f['page']['body']), 'Order summary shown to its owner');
+$f = $p->submit('process/assistant.php', ['message' => '<script>alert(1)</script> can I bring my dog']);
+check('T56', 'Assistant escapes input and logs what it cannot answer', !str_contains($f['page']['body'], '<script>alert(1)</script>')
+    && (int) db_value("SELECT COUNT(*) FROM assistant_log WHERE answered = 0 AND question LIKE '%bring my dog%'") === 1, 'Script shown as text; question logged as unanswered');
+$before = (int) db_value('SELECT COUNT(*) FROM assistant_log');
+$r = $p->req('process/assistant.php', ['message' => 'hello']);
+check('T57', 'Assistant rejects a post without CSRF token', (int) db_value('SELECT COUNT(*) FROM assistant_log') === $before, 'Nothing logged, nothing answered');
+check('T58', 'Every question is logged for staff', $before - $logged === 5, ($before - $logged) . ' new rows in assistant_log for 5 questions');
+
 // ---- Session timeout ------------------------------------------------------------------------------
 $t = new Client('timeout');
 $t->login('chloe@localhost', 'Member123!');
@@ -356,6 +379,9 @@ if (is_file($sessFile)) {
 $r = $t->get('account.php');
 $land = $r['location'] ? $t->get(local_path($r['location'])) : $r;
 check('T18', 'Idle for 31 minutes signs the member out', $r['code'] === 303 && str_contains(flash_text($land['body']), '30 minutes without activity'), flash_text($land['body']));
+
+// Remove the cover generated for the test book, so test runs leave no files behind.
+@unlink(APP_ROOT . '/assets/covers/' . strtolower($serial) . '.svg');
 
 // ---- Summary ------------------------------------------------------------------------------------------
 $passed = count(array_filter($results, fn($x) => $x[2]));

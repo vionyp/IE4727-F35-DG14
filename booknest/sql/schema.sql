@@ -27,12 +27,16 @@ CREATE TABLE categories (
 CREATE TABLE books (
   id             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   serial_no      CHAR(10)     NOT NULL,
+  isbn           CHAR(13)     NULL,
   title          VARCHAR(150) NOT NULL,
   author         VARCHAR(100) NOT NULL,
+  publisher      VARCHAR(80)  NULL,
+  format         VARCHAR(20)  NOT NULL DEFAULT 'Paperback',
   category_id    INT UNSIGNED NOT NULL,
   hook           VARCHAR(200) NOT NULL DEFAULT '',
   synopsis       TEXT         NOT NULL,
   sample_text    LONGTEXT     NULL,
+  sample_type    ENUM('excerpt','preview') NOT NULL DEFAULT 'excerpt',
   price          DECIMAL(8,2) NOT NULL,
   rating         DECIMAL(2,1) NOT NULL DEFAULT 0.0,
   published_year SMALLINT     NOT NULL,
@@ -49,6 +53,7 @@ CREATE TABLE books (
   KEY ix_books_status_cat (status, category_id),
   KEY ix_books_title (title),
   KEY ix_books_author (author),
+  KEY ix_books_isbn (isbn),
   KEY ix_books_created (created_at),
   CONSTRAINT fk_books_category FOREIGN KEY (category_id) REFERENCES categories(id),
   CONSTRAINT fk_books_user FOREIGN KEY (added_by) REFERENCES users(id) ON DELETE SET NULL
@@ -119,4 +124,17 @@ CREATE TABLE shelf (
   PRIMARY KEY (user_id, book_id),
   CONSTRAINT fk_shelf_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   CONSTRAINT fk_shelf_book FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- Questions put to Paige, the help assistant, so staff can see what people ask and what she could not answer.
+CREATE TABLE assistant_log (
+  id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id    INT UNSIGNED NULL,
+  question   VARCHAR(300) NOT NULL,
+  intent     VARCHAR(40)  NOT NULL,
+  answered   TINYINT(1)   NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY ix_assistant_intent (intent),
+  KEY ix_assistant_answered (answered, created_at),
+  CONSTRAINT fk_assistant_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
