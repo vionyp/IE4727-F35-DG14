@@ -3,7 +3,7 @@
 require __DIR__ . '/includes/bootstrap.php';
 
 $id = input_int($_GET, 'id');
-$book = $id ? db_one("SELECT b.id, b.title, b.author, b.price, b.stock, b.sample_text, b.sample_type, b.cover_path, b.cover_alt, c.name AS category, c.slug AS category_slug
+$book = $id ? db_one("SELECT b.id, b.title, b.author, b.stock, b.sample_text, b.sample_type, b.cover_path, b.cover_alt, c.name AS category, c.slug AS category_slug
                       FROM books b JOIN categories c ON c.id = b.category_id WHERE b.id = ? AND b.status = 'approved'", [$id]) : null;
 if (!$book || trim((string) $book['sample_text']) === '') {
     flash('info', 'There is nothing to read for that book yet.');
@@ -77,13 +77,8 @@ require __DIR__ . '/includes/header.php';
         <div class="page-body">
           <p class="eyebrow">End of <?= $word ?></p>
           <h2 class="title-name"><?= $isPreview ? 'Sounds like your kind of book?' : 'Enjoying it?' ?></h2>
-          <p><?= $isPreview ? 'Order ' . e($book['title']) . ' for delivery, or collect it at the library.' : 'The rest of ' . e($book['title']) . ' is waiting. Order a copy for delivery, or collect it at the library.' ?></p>
-          <form action="<?= e(url('process/cart.php')) ?>" method="post">
-            <?= csrf_field() ?>
-            <input type="hidden" name="action" value="buy">
-            <input type="hidden" name="book_id" value="<?= (int) $book['id'] ?>">
-            <button class="btn btn-primary" type="submit"<?= $book['stock'] > 0 ? '' : ' disabled' ?>>Buy now · <?= money($book['price']) ?></button>
-          </form>
+          <p><?= $isPreview ? 'Borrow ' . e($book['title']) . ' free for ' . LOAN_DAYS . ' days and collect it at the front desk.' : 'The rest of ' . e($book['title']) . ' is waiting. Borrow it free for ' . LOAN_DAYS . ' days and collect it at the front desk.' ?></p>
+          <a class="btn btn-primary" href="<?= e(url('borrow.php?id=' . $book['id'])) ?>">Borrow this book</a>
           <a class="btn btn-ghost-paper" href="<?= e(book_url((int) $book['id'])) ?>">Back to book</a>
         </div>
       </section>

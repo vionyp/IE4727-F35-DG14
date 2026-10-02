@@ -1,6 +1,6 @@
 # BookNest: Requirements
 
-Project: *BookNest, an online library for browsing, sampling and buying books*
+Project: *BookNest, an online library for browsing, sampling and borrowing books*
 Course: IE4727 Web Application Design, Theme 6 (Online Library)
 Status: Phase 0A baseline, written before implementation. Changes are logged in `CHANGELOG.md`.
 
@@ -15,12 +15,12 @@ Each requirement is measurable and has at least one test in `TEST_LOG.md`.
 | ID | Requirement | Measure |
 |---|---|---|
 | AR-U1 | Every primary task can be completed in three clicks or fewer (the Three Click Rule). | Audit in `STORYBOARD.md`, test T39 |
-| AR-U2 | The header (logo, navigation, search, cart, account) is identical and in the same place on every page. | Visual check on all 10 pages |
+| AR-U2 | The header (logo, navigation, search, loans, account) is identical and in the same place on every page. | Visual check on all 10 pages |
 | AR-U3 | Users always know where they are: active navigation item, breadcrumbs on inner pages, descriptive page titles. | T41, manual review |
 | AR-U4 | Every action gives a clear response: a success, error or info message that says what happened and what to do next. | Flash message on every POST |
 | AR-U5 | Forms keep the user's input after a server side error and point to the exact field. | T09, T15 |
-| AR-U6 | Empty states offer a next step instead of a dead end (no results, empty cart, empty shelf). | Manual review |
-| AR-U7 | Users stay in control: bookings can be cancelled, shelf items removed, cart edited, reader closed at any time. | T29, T38 |
+| AR-U6 | Empty states offer a next step instead of a dead end (no results, nothing on loan, empty shelf). | Manual review |
+| AR-U7 | Users stay in control: bookings can be cancelled, loans returned early, reservations cancelled, queues left, shelf items removed, reader closed at any time. | T14, T29, T38 |
 
 ### Responsiveness
 
@@ -59,7 +59,7 @@ Each requirement is measurable and has at least one test in `TEST_LOG.md`.
 | AR-M1 | One shared header, footer and bootstrap include; no duplicated layout code. | Code review |
 | AR-M2 | Design tokens in one place (`base.css`); four external stylesheets. | Code review |
 | AR-M3 | Every PHP and JS function has a one line purpose comment. | Code review |
-| AR-M4 | Configuration (DB, hours, limits, mail domain, payment simulator) lives only in `config/config.php`. | Code review |
+| AR-M4 | Configuration (DB, hours, room and lending rules, mail domain) lives only in `config/config.php`. | Code review |
 
 ### Accessibility
 
@@ -90,10 +90,10 @@ Mapped to features F1 to F10 of the project brief.
 
 | ID | Requirement |
 |---|---|
-| FR-01 | The home page shows a featured book billboard with cover, hook, "Read a sample" and "Buy now". |
+| FR-01 | The home page shows a featured book billboard with cover, hook, live availability, "Borrow it free" and "Read a sample". |
 | FR-02 | The home page shows horizontal rows for New arrivals, Staff picks, Recently viewed (if any) and each category, generated from the database. |
 | FR-03 | Rows scroll by touch swipe and by previous/next buttons that also work with the keyboard. |
-| FR-04 | Cover cards show title, author, rating and price, with a quick info overlay on hover and on focus. |
+| FR-04 | Cover cards show title, author, rating and live availability (never a price), with a quick info overlay on hover and on focus. |
 | FR-05 | Visitors see a sign in card on the home page; members see a personal welcome with shortcuts. |
 | FR-06 | The home page shows opening hours with a live "Open now" or "Closed" status and a study room teaser. |
 
@@ -102,17 +102,17 @@ Mapped to features F1 to F10 of the project brief.
 | ID | Requirement |
 |---|---|
 | FR-07 | A search box on every page searches title, author, ISBN and serial number. |
-| FR-08 | The catalogue can be filtered by category and sorted by title, price (both directions), newest and rating. |
+| FR-08 | The catalogue can be filtered by category and sorted by title, newest, rating and "on the shelf now first". |
 | FR-09 | Typing in the "Refine" box filters the visible results instantly without reloading. |
 | FR-10 | An empty result shows the query and suggests categories to browse. |
-| FR-11 | A signed in member searching an exact serial number (`BNT-000000`) sees a full product details panel (stock, status, added by, date added). |
+| FR-11 | A signed in member searching an exact serial number (`BNT-000000`) sees a full details panel (availability, copies owned, on loan, waiting, times borrowed, status, added by, date added). |
 
 ### F3 Book detail
 
 | ID | Requirement |
 |---|---|
-| FR-12 | The book page shows cover, title, author, category, year, format, pages, ISBN, publisher, rating, price, stock state and synopsis. |
-| FR-13 | The book page offers Buy now, Add to cart, Read a sample and, for members, Save to shelf. |
+| FR-12 | The book page shows cover, title, author, category, year, format, pages, ISBN, publisher, rating, live availability, copies owned, loan period, late fee and synopsis. |
+| FR-13 | The book page offers Borrow (or Join the queue, Leave the queue, Borrow your held copy, depending on the member's situation), Read a sample and, for members, Save to shelf. Visitors see "Sign in to borrow". |
 | FR-14 | The book page shows "You may also like" books from the same category. |
 | FR-15 | Viewing a book records it in a "Recently viewed" cookie (last 6 books). |
 
@@ -122,18 +122,21 @@ Mapped to features F1 to F10 of the project brief.
 |---|---|
 | FR-16 | The reader shows a book's reading pages as a two page spread on desktop and a single page on phones: a real 10 page sample for public domain books, or a short preview written by BookNest (labelled as not an excerpt) for books in copyright. |
 | FR-17 | Pages turn by swipe or drag, arrow keys, clicking page edges and Previous/Next buttons, with a 3D turn. |
-| FR-18 | The reader shows a page counter and progress bar; the last page offers Buy now and Back to book. |
+| FR-18 | The reader shows a page counter and progress bar; the last page offers Borrow this book and Back to book. |
 | FR-19 | Without JavaScript, all pages are readable as a vertical scroll. |
 
-### F5 Cart and checkout
+### F5 Borrowing, queues and late fees
+
+Replaced the cart and checkout on 2 October 2026 so the core transaction matches the course theme,
+an online library (see `CHANGELOG.md`). Constants live in `config/config.php`.
 
 | ID | Requirement |
 |---|---|
-| FR-20 | Visitors and members can add books to a cart, change quantities and remove lines. |
-| FR-21 | Checkout collects name, email, phone, delivery method, address (for delivery) and an optional note. |
-| FR-22 | A payment simulator lets the demo choose Success or Failure. |
-| FR-23 | On success the order is saved as paid, stock is reduced in one transaction, the cart is cleared and a confirmation email is sent. |
-| FR-24 | On failure the order is saved as failed, stock is unchanged, the cart is kept and the user can retry. |
+| FR-20 | A signed in member borrows a book by choosing a collection date (today up to `COLLECT_AHEAD_DAYS` = 7 days ahead) and confirming. The loan lasts `LOAN_DAYS` = 14 days from the collection date, and a confirmation email gives the due date. Visitors are sent to sign in first. |
+| FR-21 | No price is shown to members anywhere. Every book shows live availability instead: "Available to borrow"; for the member's own loan "Due back in X days", "Due today" or "X days overdue" (in red); for a book someone else has, "Borrowed until [date]"; and "N people waiting" when a queue exists. |
+| FR-22 | A member can hold one open loan per title. When no copy is on the shelf the member can join a queue: they see their own position ("You are #2 in line"), everyone else sees the queue length, and they can leave the queue at any time. |
+| FR-23 | When a copy comes back (a return, or staff adding copies) the first person in the queue is emailed and the copy is held for them for `QUEUE_HOLD_DAYS` = 2 days. A hold that is not taken up passes to the next person. Two members can never take the same last copy. |
+| FR-24 | Members return a loan, or cancel a reservation not yet collected, from My Account. A late return costs `LATE_FEE_PER_DAY` = S$0.50 for every day after the due date, worked out live from the dates; returning stops the fee growing. My Account shows each overdue loan with the fee so far and the total owed. Paying fees is out of scope: they are settled at the front desk. |
 
 ### F6 Study rooms
 
@@ -152,14 +155,14 @@ Mapped to features F1 to F10 of the project brief.
 |---|---|
 | FR-31 | Visitors can register with name, email and password (confirmed). |
 | FR-32 | Users can sign in, optionally remember their email, and sign out. |
-| FR-33 | My Account shows upcoming bookings, orders, My Shelf and book submissions. |
+| FR-33 | My Account shows loans (due dates, fees, return), queue places, recent returns, upcoming bookings, My Shelf and book submissions. |
 | FR-34 | Members can save books to and remove books from My Shelf. |
 
 ### F8 Add and search books
 
 | ID | Requirement |
 |---|---|
-| FR-35 | Members can add a new book with serial, title, author, category, price, year, pages, synopsis, sample text and stock. |
+| FR-35 | Members can add a new book with serial, title, author, category, year, pages, synopsis, sample text and the number of copies they can give. |
 | FR-36 | New books are stored as pending with a generated cover and appear in the catalogue only after approval. |
 | FR-37 | Serial numbers must be unique and match `BNT-` plus six digits. |
 
@@ -168,16 +171,16 @@ Mapped to features F1 to F10 of the project brief.
 | ID | Requirement |
 |---|---|
 | FR-38 | Admins can approve or reject pending books. |
-| FR-39 | Admins can edit price, stock, featured and staff pick flags, and delete books that have never been ordered. |
+| FR-39 | Admins can edit copies owned (never below the copies on loan or held for the queue), replacement value, featured and staff pick flags, and delete books that have never been borrowed. Added copies are offered to the queue at once. |
 | FR-40 | Admins can open or close study rooms. |
-| FR-41 | Admins see analytics built with GROUP BY: revenue by category, top 5 books, orders per day (14 days), bookings per room, busiest hours, members, average order value, payment success rate. |
+| FR-41 | Admins see analytics built with GROUP BY and aggregates: books on loan, overdue loans, late fees outstanding, people in queues, most borrowed books, loans by category, longest queues, overdue loans with fees, new loans per day (14 days), bookings per room, busiest hours, members. |
 
 ### F11 Help assistant
 
 | ID | Requirement |
 |---|---|
-| FR-44 | Every page offers a help assistant (Paige) that answers typed questions and quick question buttons about orders, study rooms, opening hours, delivery, payment, accounts and books. |
-| FR-45 | The assistant states that it is automated, never shows an order or booking to anyone but its owner, and offers staff contact when it cannot answer. |
+| FR-44 | Every page offers a help assistant (Paige) that answers typed questions and quick question buttons about borrowing, loans, late fees, queues, collection, study rooms, opening hours, accounts and books. |
+| FR-45 | The assistant states that it is automated, never shows a loan or booking to anyone but its owner, and offers staff contact when it cannot answer. |
 | FR-46 | Every question is logged with its topic so that staff can see, in the admin dashboard, what people ask and what was not answered. |
 
 ### F10 Cookies and request data

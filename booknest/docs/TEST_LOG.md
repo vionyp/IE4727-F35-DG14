@@ -15,9 +15,57 @@ here is predicted: where a test has not been run yet, it says so.
 | **HTML validator** | `html-validate` 8 with the `html-validate:standard` preset on the rendered HTML of 13 page states. | Save each page with `curl`, then `npx html-validate *.html` |
 | **Code search** | Search of all PHP and JS for forbidden technology. | `Select-String` / `grep` for the patterns in T44 |
 
-Final automated result: **44 of 44 E2E checks passed, 0 PHP errors logged**.
+Final automated result: **59 of 59 E2E checks passed, 0 PHP errors logged** (2 October 2026, after
+the switch to borrowing). The first release recorded 44 of 44 on 28 September.
 
 ---
+
+## Borrowing system (2 October 2026, XAMPP on Windows)
+
+The cart and payment checks were replaced by borrowing checks with the same IDs (T09 to T14, T28),
+and T60 to T65 were added. T04, T37, T39b and T53 to T55 were redefined for loans. Every row below
+is from the run of `tools/e2e-test.php` on 2 October 2026 against a freshly imported database,
+except where the method says otherwise. Book titles come from that run; the script picks books
+that nobody has on loan or in a queue, and sets their copies through the admin form.
+
+| ID | Req | Feature | Input data | Expected output | Method | Actual result | Result |
+|---|---|---|---|---|---|---|---|
+| T09 | FR-20 | Visitor borrows | POST `process/loan.php` signed out | Sent to sign in, no loan | E2E | 303 to `sign-in.php`, loans still 68 | Pass |
+| T10 | FR-20 | Collection date window | Yesterday; today + 8 days | Both refused | E2E | "Choose a collection date from today up to 7 days ahead." for both, no loan | Pass |
+| T11 | FR-20 | Borrow an available book | Book with 3 copies, collect today | Loan `active`, due today + 14, one fewer on the shelf, email | E2E | Loan #69 active, due 16 Oct, on the shelf 3 → 2, "Loan confirmed" in `mail.log` | Pass |
+| T11b | FR-20 | Borrow for a later day | Collect today + 3 | Loan `reserved`, due 14 days after collection | E2E | Reserved, collect 5 Oct, due 19 Oct | Pass |
+| T12 | FR-22 | One loan per title | Same member borrows the same book again | Refused | E2E | "You already have The Subtle Art of Not Giving a F*ck on loan." | Pass |
+| T13 | FR-22 | Queue at zero | Book with 1 copy: member 1 borrows it; members 2 and 3 try | Borrow refused; members 2 and 3 queue as #1 and #2; member 3 sees "You are #2 in line" | E2E | "Every copy of Deep Work is out..." then "#1 in line", "#2 in line" | Pass |
+| T13b | FR-22 | Queue twice | Member 3 joins again | Refused | E2E | "You are already in the queue for Deep Work." | Pass |
+| T13c | FR-21 | What others see | Visitor opens the book | Due date and queue length | E2E | "Borrowed until ..." and "2 people waiting" | Pass |
+| T14 | FR-23 | Return offers the copy | Member 1 returns; member 3 then member 2 try to borrow | Member 2 offered and emailed; member 3 still refused; member 2 borrows the held copy | E2E | As expected; queue entry 2 `borrowed`, entry 3 `waiting` | Pass |
+| T60 | FR-24 | Late fee at N days | Loan moved so it was due 5 days ago | 5 × S$0.50 = S$2.50, shown live | E2E | My Account: "5 days overdue, S$2.50 owed so far"; SQL fee 2.50 | Pass |
+| T61 | FR-24 | Return stops the fee | Return it, then move all its dates 2 more days back | Fee stays S$2.50 | E2E | "It was 5 days late, so a late fee of S$2.50 was added"; two days on: S$2.50 | Pass |
+| T62 | FR-23 | Race for the last copy | Two members borrow a 1 copy book at the same instant | Exactly one loan | E2E (`curl_multi`) | 1 open loan | Pass |
+| T63 | FR-23 | Hold expires | Hold moved 3 days into the past, any page loaded | Hold `expired`, next person offered and emailed | E2E | Member 3 offered → expired; member 4 offered; "has ended" and offer emails logged | Pass |
+| T64 | FR-39 | Staff add a copy | Admin raises copies from 1 to 2 while a member waits | Offered at once | E2E | "Saved changes to Deep Work. 1 new copy was offered to the queue." | Pass |
+| T65 | FR-39 | Staff lower copies | Admin sets 1 copy while 2 are held | Refused, copies unchanged | E2E | "Deep Work has 2 copies out on loan or held for the queue, so the library must keep at least that many." | Pass |
+| T28 | AR-S7 | External email | Member registered as `...@gmail.com` borrows | Loan works, email refused and logged | E2E | `mail.log`: "refused: external recipient blocked" | Pass |
+| T04 | FR-11 | Serial lookup, member | Aisha searches `BNT-000123` | Panel with availability, copies, times borrowed, added by | E2E | Panel shown with all fields | Pass |
+| T37 | FR-41 | Analytics accuracy | Dashboard "Late fees outstanding" vs a manual `SUM` over `loans` | Same value | E2E | S$12.50 on both (after the test loans) | Pass |
+| T39b | FR-39 | Delete protection | Admin deletes a book that has been borrowed | Refused, book kept | E2E | "...has been borrowed before, so it is kept for the loan records." | Pass |
+| T53 | FR-44 | Quick question | "Late fees" button | Fee answer, earlier messages kept | E2E | "Returning late costs S$0.50..." shown, conversation kept | Pass |
+| T54 | FR-45 | Loan privacy | Visitor asks "what do I have on loan" | Asked to sign in, no loan data | E2E | "I can only show loans to the member they belong to." | Pass |
+| T55 | FR-45 | Own loans | Aisha asks the same | Her loans with due date and fee | E2E | "Atomic Habits, due back ..." and "4 days overdue (S$2.00 so far)" | Pass |
+| T59 | FR-44 | Understanding | 42 questions in `tools/assistant-test.php` (loans, fees, queue, return, collection, borrow added) | Each lands on the expected topic | Script | First run 41 of 42: "how long can I keep a book" not understood; pattern added; now 42 of 42 | Pass after fix |
+| T39 | AR-U1 | Three Click Rule for borrowing | Borrow, join a queue, return | 3, 2 and 3 clicks | Walk-through of the built pages (screenshots) | Book page shows Borrow; `borrow.php` has today chosen and one Confirm button; Join the queue and Return (with confirm) as in `STORYBOARD.md` | Pass |
+| T45 | AR-B2 | Page count | Top level `.php` pages | Still 10 | Code search | index, catalogue, book, read, borrow, rooms, account, sign-in, add-book, admin = 10 | Pass |
+| T44 | AR-B1 | Forbidden technology | Same patterns as before, over all PHP and JS | No matches | Code search | 0 matches | Pass |
+| T66 | all | Full regression | `tools/e2e-test.php` | All pass | E2E | **59 of 59**, 0 PHP errors | Pass |
+
+Visual check: the book, catalogue, borrow, My Account and admin pages were rendered in headless
+Chrome at 1366px and the home page at 390px. That found two problems: a card said "Borrowed until"
+a date that had already passed (an overdue loan), and long availability text wrapped badly next
+to the rating. Both were fixed and re-checked.
+
+**Not re-run yet for the new pages:** Lighthouse, the HTML validator and the 375px device check
+(T41 to T43). They are planned with the phone performance work. The keyboard-only walk-through
+(T40) is still to do and now covers borrowing, queues and returns.
 
 ## Re-run after the real catalogue (1 October 2026, XAMPP on Windows)
 
@@ -46,7 +94,9 @@ Final automated result: **44 of 44 E2E checks passed, 0 PHP errors logged**.
 The full end to end suite is now **51 checks, all passing**.
 
 The detailed results below were recorded on 28 September 2026 with the first catalogue; book
-titles, order numbers and amounts in them refer to that data.
+titles, order numbers and amounts in them refer to that data. T04, T09 to T14, T28, T37, T39b and
+T53 to T55 have since been redefined for borrowing; their current definitions and results are in
+the Borrowing section at the top. The rows below are the original results, kept for the record.
 
 ## 1. Search, browse and serial lookup
 
@@ -97,7 +147,7 @@ Swipe gestures were implemented with Pointer Events (40px threshold) and the sam
 | T33b | AR-S2 | Private folders | GET `config/config.php`, `storage/mail.log` | Blocked | E2E | 403 and 403 | Pass |
 | T44 | AR-B1 | Forbidden technology | Search for `fetch(`, `XMLHttpRequest`, `JSON.`, `json_encode`, `json_decode`, `jquery`, `<iframe`, `<frame`, `action="mailto` | No matches in the base version | Code search | 0 matches | Pass |
 
-## 5. Cart, checkout and payment
+## 5. Cart, checkout and payment (retired on 2 October 2026, replaced by borrowing)
 
 | ID | Req | Feature | Input data | Expected output | Method | Actual result | Result |
 |---|---|---|---|---|---|---|---|
@@ -150,6 +200,9 @@ Swipe gestures were implemented with Pointer Events (40px threshold) and the sam
 | T40 | AR-A2 | Keyboard only | Booking and checkout with Tab, Enter, arrows | Fully usable, focus visible | Partly automated | Reader arrow keys verified (T06b); every control has a name and a focus style (Lighthouse). **A full manual keyboard walk-through has not been done yet** | To do |
 
 ## Lighthouse scores (final run)
+
+Measured on 28 September 2026, before the switch to borrowing ("Checkout" is now the Borrow page,
+which has not been measured yet).
 
 | Page | Accessibility | Best practices | SEO | Performance |
 |---|---|---|---|---|

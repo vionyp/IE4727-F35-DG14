@@ -235,6 +235,14 @@ foreach ($pending as $b) {
               'isbn' => null, 'publisher' => null, 'format' => 'Paperback'];
 }
 
+// Copies the library owns. tools/catalogue.php gives a bookshop style stock figure; a library holds
+// far fewer copies, so it is scaled down to 1 to 5. A few titles are set by hand so that the demo
+// always has a book with a queue, one on hold for the next reader and one with a single copy.
+$copyOverrides = ['Fourth Wing' => 2, 'Project Hail Mary' => 1, 'The Housemaid' => 1];
+foreach ($all as $k => $b) {
+    $all[$k]['stock'] = $copyOverrides[$b['title']] ?? ($b['stock'] > 0 ? max(1, min(5, intdiv($b['stock'], 5))) : 0);
+}
+
 // Writes the preview pages for a book that is still in copyright. Every word is ours, not the author's.
 function preview_pages(array $b): array
 {
@@ -280,52 +288,74 @@ foreach ($rooms as $i => [$name, $cap, $floor, $features]) {
 }
 $sql[] = "INSERT INTO study_rooms (id, name, capacity, floor, features, image_path, is_active) VALUES\n  " . implode(",\n  ", $rows) . ";\n";
 
-// Orders over the last 21 days (deterministic, so the seed is reproducible)
+// Loans and queues. Dates are relative to the day of import, so the overdue loans are always
+// overdue and the queues always waiting, whenever the demo runs (deterministic, so reproducible).
 mt_srand(4727);
 $approved = array_values(array_filter(array_keys($all), fn($k) => $all[$k]['status'] === 'approved'));
 $members = array_slice(array_values($userIds), 1);
-$guests = [['Priya Nair', 'priya@localhost'], ['Marcus Chen', 'marcus@localhost'], ['Siti Aminah', 'siti@localhost'], ['Tom Reyes', 'tom@localhost']];
-$orderRows = [];
-$itemRows = [];
-$orderId = 0;
-for ($d = 20; $d >= 0; $d--) {
-    $n = mt_rand(0, 3) + ($d < 14 ? 1 : 0);
+$bookId = [];
+foreach ($all as $k => $b) {
+    $bookId[$b['title']] = $k + 1;
+}
+// Returns a SQL date expression for "today plus or minus n days".
+function day_sql(int $n): string
+{
+    return $n === 0 ? 'CURDATE()' : 'CURDATE() ' . ($n < 0 ? '- INTERVAL ' . (-$n) : '+ INTERVAL ' . $n) . ' DAY';
+}
+$loanRows = [];
+// Adds one loan. $collect and $returned are day offsets from today; null $returned means still out.
+$addLoan = function (int $uid, string $title, int $collect, ?int $returned, string $status) use (&$loanRows, $bookId) {
+    $id = $bookId[$title] ?? throw new RuntimeException("Unknown title $title");
+    $loanRows[] = "($uid, $id, " . day_sql($collect) . ', ' . day_sql($collect) . ' + INTERVAL ' . LOAN_DAYS . ' DAY, '
+        . ($returned === null ? 'NULL' : day_sql($returned)) . ", '$status', NOW() - INTERVAL " . max(0, -$collect) . ' DAY - INTERVAL ' . mt_rand(30, 600) . ' MINUTE)';
+};
+$u = $userIds;
+
+// History: books borrowed and returned on time over the last 90 days, for the dashboard charts.
+$historyCount = 0;
+for ($d = 90; $d >= 2; $d--) {
+    $n = mt_rand(0, 2);
     for ($k = 0; $k < $n; $k++) {
-        $orderId++;
-        $isGuest = mt_rand(1, 4) === 1;
-        if ($isGuest) {
-            [$name, $email] = $guests[mt_rand(0, count($guests) - 1)];
-            $uid = null;
-        } else {
-            $uid = $members[mt_rand(0, count($members) - 1)];
-            [$name, $email] = [$users[$uid - 1][0], $users[$uid - 1][1]];
+        $uid = $members[mt_rand(0, count($members) - 1)];
+        if ($users[$uid - 1][4] <= $d) {
+            continue; // not a member yet on that day
         }
-        $lines = mt_rand(1, 3);
-        $picked = [];
-        $subtotal = 0;
-        for ($l = 0; $l < $lines; $l++) {
-            // Weighted toward the first books in each category so "top 5" has clear winners.
-            $bk = $approved[min(count($approved) - 1, (int) floor((mt_rand(0, 1000) / 1000) ** 1.6 * count($approved)))];
-            if (isset($picked[$bk])) {
-                continue;
-            }
-            $qty = mt_rand(1, 4) === 1 ? 2 : 1;
-            $picked[$bk] = $qty;
-            $subtotal += $all[$bk]['price'] * $qty;
-            $itemRows[] = "($orderId, " . ($bk + 1) . ", $qty, {$all[$bk]['price']})";
+        // Weighted toward the first books in each category so "most borrowed" has clear winners.
+        $bk = $approved[min(count($approved) - 1, (int) floor((mt_rand(0, 1000) / 1000) ** 1.6 * count($approved)))];
+        if ($all[$bk]['stock'] <= 0) {
+            continue;
         }
-        $method = mt_rand(0, 1) ? 'delivery' : 'pickup';
-        $fee = ($method === 'delivery' && $subtotal < FREE_DELIVERY_FROM) ? DELIVERY_FEE : 0;
-        $status = mt_rand(1, 9) === 1 ? 'failed' : 'paid';
-        $orderRows[] = '(' . implode(', ', [$orderId, $uid ?? 'NULL', q($email), q($name), q('9' . mt_rand(1000000, 8999999)),
-            q($method), $method === 'delivery' ? q(mt_rand(1, 99) . ' Jurong West Street ' . mt_rand(11, 99) . ', Singapore 6' . mt_rand(40000, 49999)) : 'NULL',
-            'NULL', number_format($subtotal, 2, '.', ''), number_format($fee, 2, '.', ''), number_format($subtotal + $fee, 2, '.', ''),
-            q($status), "NOW() - INTERVAL $d DAY - INTERVAL " . mt_rand(30, 600) . ' MINUTE']) . ')';
+        $kept = mt_rand(2, min(LOAN_DAYS, $d));
+        $addLoan($uid, $all[$bk]['title'], -$d, -$d + $kept, 'returned');
+        $historyCount++;
     }
 }
-$sql[] = "INSERT INTO orders (id, user_id, email, full_name, phone, delivery_method, address, note, subtotal, delivery_fee, total, payment_status, created_at) VALUES\n  "
-    . implode(",\n  ", $orderRows) . ";\n";
-$sql[] = "INSERT INTO order_items (order_id, book_id, qty, unit_price) VALUES\n  " . implode(",\n  ", $itemRows) . ";\n";
+
+// Loans still out, chosen so every state appears in the demo.
+$addLoan($u['aisha@localhost'], 'Atomic Habits', -5, null, 'active');                // due back in 9 days
+$addLoan($u['aisha@localhost'], 'The Silent Patient', -18, null, 'overdue');         // 4 days overdue, S$2.00
+$addLoan($u['ben@localhost'], 'The Psychology of Money', -26, null, 'overdue');      // 12 days overdue, S$6.00
+$addLoan($u['ben@localhost'], 'Fourth Wing', -6, null, 'active');
+$addLoan($u['chloe@localhost'], 'Fourth Wing', -10, null, 'active');                 // both copies of Fourth Wing are out
+$addLoan($u['chloe@localhost'], 'Dune', 2, null, 'reserved');                        // to be collected in 2 days
+$addLoan($u['daniel@localhost'], 'Project Hail Mary', -15, null, 'overdue');         // 1 day overdue, its only copy
+$addLoan($u['elena@localhost'], 'Sapiens', 0, null, 'active');                       // collected today
+$addLoan($u['farah@localhost'], 'The Midnight Library', -3, null, 'active');
+// Returned: one late return that still owes a fee, and the copy of The Housemaid now held for Hana.
+$addLoan($u['gavin@localhost'], 'The Martian', -20, -3, 'returned');                 // 3 days late, S$1.50 owed
+$addLoan($u['farah@localhost'], 'The Housemaid', -12, -1, 'returned');
+$sql[] = "INSERT INTO loans (user_id, book_id, collection_date, due_date, returned_date, status, created_at) VALUES\n  "
+    . implode(",\n  ", $loanRows) . ";\n";
+
+// Queues: Fourth Wing has three people waiting, Project Hail Mary one, and The Housemaid is held for Hana.
+$queueRows = [
+    "({$bookId['Fourth Wing']}, {$u['daniel@localhost']}, NOW() - INTERVAL 5 DAY, 'waiting', NULL)",
+    "({$bookId['Fourth Wing']}, {$u['aisha@localhost']}, NOW() - INTERVAL 3 DAY, 'waiting', NULL)",
+    "({$bookId['Fourth Wing']}, {$u['elena@localhost']}, NOW() - INTERVAL 1 DAY, 'waiting', NULL)",
+    "({$bookId['Project Hail Mary']}, {$u['gavin@localhost']}, NOW() - INTERVAL 2 DAY, 'waiting', NULL)",
+    "({$bookId['The Housemaid']}, {$u['hana@localhost']}, NOW() - INTERVAL 6 DAY, 'offered', NOW() - INTERVAL 1 DAY)",
+];
+$sql[] = "INSERT INTO book_queue (book_id, user_id, queued_at, status, offered_at) VALUES\n  " . implode(",\n  ", $queueRows) . ";\n";
 
 // Room bookings from 14 days ago to 3 days ahead, respecting every room rule.
 $bookRows = [];
@@ -398,12 +428,12 @@ $sql[] = "INSERT INTO shelf (user_id, book_id, added_at) VALUES\n  "
 
 // Questions asked to Paige over the last two weeks, so the admin dashboard has something to show.
 $asked = [
-    ['What time do you close today?', 'hours', 1], ['Opening hours', 'hours', 1], ['Where is my order?', 'order', 1],
-    ['where is order 31', 'order', 1], ['Book a study room', 'rooms', 1], ['how do i cancel my room booking', 'rooms', 1],
-    ['Delivery fees', 'delivery', 1], ['do you deliver to Jurong', 'delivery', 1], ['Do you have Atomic Habits?', 'book-search', 1],
-    ['price of sapiens', 'book-search', 1], ['Recommend a book', 'recommend', 1], ['recommend a thriller', 'recommend', 1],
-    ['my payment failed', 'payment', 1], ['I forgot my password', 'account', 1], ['Talk to a person', 'contact', 1],
-    ['can i return a book', 'refund', 1], ['Do you sell gift cards?', 'unknown', 0], ['is there parking nearby', 'unknown', 0],
+    ['What time do you close today?', 'hours', 1], ['Opening hours', 'hours', 1], ['What do I have on loan?', 'loans', 1],
+    ['when is my book due', 'loans', 1], ['Book a study room', 'rooms', 1], ['how do i cancel my room booking', 'rooms', 1],
+    ['Late fees', 'fees', 1], ['do you deliver books', 'collect', 1], ['Do you have Atomic Habits?', 'book-search', 1],
+    ['is sapiens available', 'book-search', 1], ['Recommend a book', 'recommend', 1], ['recommend a thriller', 'recommend', 1],
+    ['How do I borrow?', 'borrow', 1], ['how does the queue work', 'queue', 1], ['I forgot my password', 'account', 1],
+    ['Talk to a person', 'contact', 1], ['can i return a book early', 'return', 1], ['Do you sell gift cards?', 'unknown', 0], ['is there parking nearby', 'unknown', 0],
     ['can I bring coffee into the study rooms', 'rooms', 1], ['do you buy second hand books', 'unknown', 0],
     ['are you a robot', 'about', 1], ['can I print here', 'unknown', 0],
 ];
@@ -425,4 +455,5 @@ function from_min(int $m): string
     return sprintf('%02d:%02d', intdiv($m, 60), $m % 60);
 }
 
-echo implode("\n", $report), "\n\nWrote sql/seed.sql (", count($all), " books, $orderId orders, ", count($bookRows), " bookings)\n";
+echo implode("\n", $report), "\n\nWrote sql/seed.sql (", count($all), ' books, ', count($loanRows), " loans ($historyCount returned history), ",
+    count($queueRows), ' queue places, ', count($bookRows), " bookings)\n";

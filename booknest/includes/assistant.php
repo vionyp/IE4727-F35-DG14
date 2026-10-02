@@ -1,8 +1,8 @@
 <?php
 // Paige, the BookNest virtual assistant. She is a scripted helper, not a language model:
 // she matches the visitor's words to a topic, then answers from the site's own rules and
-// from live data (orders, room bookings, stock, opening hours). Everything runs in PHP on
-// our server; there is no outside service.
+// from live data (loans, queues, late fees, room bookings, copies, opening hours). Everything
+// runs in PHP on our server; there is no outside service.
 
 const ASSISTANT_NAME = 'Paige';
 const ASSISTANT_MAX_MESSAGES = 24;
@@ -27,14 +27,14 @@ function assistant_answer(string $intent, string $text, array $links = [], bool 
     return ['intent' => $intent, 'text' => $text, 'links' => $links, 'answered' => $answered];
 }
 
-// Lists up to three books as one sentence each, with links to their pages.
+// Lists up to three books as one sentence each, with their availability and links to their pages.
 function assistant_book_lines(array $books): array
 {
     $lines = [];
     $links = [];
     foreach ($books as $b) {
-        [$stock] = stock_label((int) $b['stock']);
-        $lines[] = $b['title'] . ' by ' . $b['author'] . ', ' . money($b['price']) . ' (' . strtolower($stock) . ').';
+        [$avail] = availability_label($b);
+        $lines[] = $b['title'] . ' by ' . $b['author'] . ' (' . lcfirst($avail) . ').';
         $links[] = [$b['title'], 'book.php?id=' . $b['id']];
     }
     return [implode(' ', $lines), $links];
@@ -48,47 +48,66 @@ function assistant_find_books(string $term, int $limit = 3): array
         return [];
     }
     $like = '%' . addcslashes($term, '%_\\') . '%';
-    return db_all("SELECT id, title, author, price, stock FROM books
-                   WHERE status = 'approved' AND (title LIKE ? OR author LIKE ? OR isbn LIKE ?)
-                   ORDER BY rating DESC LIMIT " . (int) $limit, [$like, $like, $like]);
+    return db_all("SELECT b.id, b.title, b.author, b.stock, " . availability_columns() . " FROM books b
+                   WHERE b.status = 'approved' AND (b.title LIKE ? OR b.author LIKE ? OR b.isbn LIKE ?)
+                   ORDER BY b.rating DESC LIMIT " . (int) $limit, [$like, $like, $like]);
 }
 
-// Answers a question about an order. An order is only ever shown to the person who placed it.
-function assistant_order(string $text, ?array $user): array
+// Answers "what do I have on loan". Loans are only ever shown to the member they belong to.
+function assistant_loans(?array $user): array
 {
-    $mine = fn(array $o) => ($user && (int) $o['user_id'] === (int) $user['id'])
-        || (int) ($_SESSION['last_order'] ?? 0) === (int) $o['id'];
-    $order = null;
-    if (preg_match('/#?\b(\d{1,6})\b/', $text, $m)) {
-        $order = db_one('SELECT * FROM orders WHERE id = ?', [(int) $m[1]]);
-        if (!$order || !$mine($order)) {
-            return assistant_answer('order', 'I can only show an order to the person who placed it, and I could not match order #'
-                . (int) $m[1] . ' to you. If it is yours, sign in with the account you ordered with and ask me again.',
-                [['Sign in', 'sign-in.php']]);
-        }
-    } elseif ($user) {
-        $order = db_one('SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC LIMIT 1', [$user['id']]);
-        if (!$order) {
-            return assistant_answer('order', 'You have not placed an order with this account yet. When you do, it appears in My Account straight away.',
-                [['Browse books', 'catalogue.php']]);
-        }
-    } else {
-        return assistant_answer('order', 'Tell me your order number (it is in your confirmation email, for example "order 52"). '
-            . 'If you ordered while signed in, sign in and I can look it up for you.', [['Sign in', 'sign-in.php']]);
+    if (!$user) {
+        return assistant_answer('loans', 'I can only show loans to the member they belong to. Sign in and ask me again, '
+            . 'or open My Account to see every book you have, with its due date.', [['Sign in', 'sign-in.php']]);
     }
+    $loans = db_all("SELECT l.*, b.title FROM loans l JOIN books b ON b.id = l.book_id
+                     WHERE l.user_id = ? AND l.status <> 'returned' ORDER BY l.due_date", [$user['id']]);
+    if (!$loans) {
+        return assistant_answer('loans', 'You have nothing on loan right now. Find a book, press Borrow and pick a collection day.',
+            [['See what is on the shelf', 'catalogue.php?sort=available']]);
+    }
+    $parts = [];
+    foreach ($loans as $l) {
+        $state = loan_state($l);
+        $parts[] = $l['title'] . match ($state) {
+            'reserved' => ', ready to collect from ' . short_date($l['collection_date']),
+            'overdue' => ', ' . days_text(loan_days_late($l)) . ' overdue (' . money(loan_fee($l)) . ' so far)',
+            default => ', due back ' . short_date($l['due_date']),
+        };
+    }
+    return assistant_answer('loans', 'You have ' . count($loans) . (count($loans) === 1 ? ' book' : ' books') . ' on loan: '
+        . implode('; ', $parts) . '.', [['My loans', 'account.php#loans']]);
+}
 
-    $items = (int) db_value('SELECT COALESCE(SUM(qty), 0) FROM order_items WHERE order_id = ?', [$order['id']]);
-    $placed = date('j M', strtotime($order['created_at']));
-    $state = match ($order['payment_status']) {
-        'paid' => $order['delivery_method'] === 'delivery'
-            ? 'It is paid and on its way: delivery takes up to 3 working days from ' . $placed . '.'
-            : 'It is paid and ready to collect at the front desk, any day from ' . sprintf('%02d:00 to %02d:00', OPEN_HOUR, CLOSE_HOUR) . '.',
-        'failed' => 'The payment did not go through, so nothing was charged and nothing will be sent. Your cart is kept if you want to try again.',
-        default => 'The payment is still being confirmed. Please check again in a few minutes.',
-    };
-    return assistant_answer('order', 'Order #' . $order['id'] . ' was placed on ' . $placed . ' for ' . $items
-        . ($items === 1 ? ' book' : ' books') . ', total ' . money($order['total']) . '. ' . $state,
-        $user ? [['My orders', 'account.php#orders']] : []);
+// Answers questions about the queue, including the member's own places in line.
+function assistant_queue(?array $user): array
+{
+    $rule = 'When every copy of a book is out, press "Join the queue" on its page. When a copy comes back, the first person '
+        . 'in line gets an email and we hold it for them for ' . QUEUE_HOLD_DAYS . ' days; after that it passes to the next person.';
+    if ($user) {
+        $mine = db_all("SELECT q.*, b.title FROM book_queue q JOIN books b ON b.id = q.book_id
+                        WHERE q.user_id = ? AND q.status IN ('waiting','offered') ORDER BY q.queued_at", [$user['id']]);
+        if ($mine) {
+            $parts = array_map(fn($q) => $q['title'] . ($q['status'] === 'offered'
+                ? ' (a copy is held for you until ' . short_date(hold_until($q)) . ')'
+                : ' (you are #' . queue_position($q) . ' in line)'), $mine);
+            return assistant_answer('queue', 'You are waiting for ' . implode('; ', $parts) . '. ' . $rule, [['My loans', 'account.php#loans']]);
+        }
+    }
+    return assistant_answer('queue', $rule, [['Browse books', 'catalogue.php']]);
+}
+
+// Answers questions about late fees, with the member's own total when signed in.
+function assistant_fees(?array $user): array
+{
+    $rule = 'A loan lasts ' . LOAN_DAYS . ' days. Returning late costs ' . money(LATE_FEE_PER_DAY) . ' for every day after the due date, '
+        . 'and the fee stops growing the day you return the book. Fees are settled at the front desk.';
+    if ($user) {
+        $owed = fees_owed((int) $user['id']);
+        return assistant_answer('fees', ($owed > 0 ? 'You owe ' . money($owed) . ' in late fees at the moment. ' : 'You owe nothing at the moment. ') . $rule,
+            [['My loans', 'account.php#loans']]);
+    }
+    return assistant_answer('fees', $rule);
 }
 
 // Answers questions about study rooms, using live availability and the member's own bookings.
@@ -121,7 +140,7 @@ function assistant_rooms(string $text, ?array $user): array
         . ($user ? '' : ' You need to be signed in to book.'), [['See free rooms', 'rooms.php']]);
 }
 
-// Suggests books, from a category if the visitor named one, otherwise the best sellers.
+// Suggests books, from a category if the visitor named one, otherwise the most borrowed.
 function assistant_recommend(string $text): array
 {
     $topics = [
@@ -133,23 +152,23 @@ function assistant_recommend(string $text): array
         'classics' => '/classic|old|public domain/',
         'fiction' => '/fiction|novel|story|romance/',
     ];
+    $cols = 'b.id, b.title, b.author, b.stock, ' . availability_columns();
     foreach ($topics as $slug => $pattern) {
         if (preg_match($pattern, $text)) {
             $cat = db_one('SELECT id, name FROM categories WHERE slug = ?', [$slug]);
             if ($cat) {
-                $books = db_all("SELECT id, title, author, price, stock FROM books WHERE status = 'approved' AND category_id = ?
-                                 ORDER BY rating DESC LIMIT 3", [$cat['id']]);
+                $books = db_all("SELECT $cols FROM books b WHERE b.status = 'approved' AND b.category_id = ?
+                                 ORDER BY b.rating DESC LIMIT 3", [$cat['id']]);
                 [$line, $links] = assistant_book_lines($books);
                 $links[] = ['All ' . $cat['name'], 'catalogue.php?category=' . $slug];
                 return assistant_answer('recommend', 'In ' . $cat['name'] . ', readers rate these highest: ' . $line, $links);
             }
         }
     }
-    $books = db_all("SELECT b.id, b.title, b.author, b.price, b.stock FROM books b
-                     JOIN order_items oi ON oi.book_id = b.id JOIN orders o ON o.id = oi.order_id AND o.payment_status = 'paid'
-                     WHERE b.status = 'approved' GROUP BY b.id ORDER BY SUM(oi.qty) DESC LIMIT 3");
+    $books = db_all("SELECT $cols FROM books b JOIN loans l ON l.book_id = b.id
+                     WHERE b.status = 'approved' GROUP BY b.id ORDER BY COUNT(l.id) DESC, b.title LIMIT 3");
     [$line, $links] = assistant_book_lines($books);
-    return assistant_answer('recommend', 'Our best sellers right now: ' . $line
+    return assistant_answer('recommend', 'Our most borrowed books right now: ' . $line
         . ' Tell me a genre, such as mystery, money or fantasy, and I will narrow it down.', $links);
 }
 
@@ -162,28 +181,28 @@ function assistant_reply(string $message, ?array $user): array
 
     if ($has('/who are you|your name|are you (a |an )?(bot|robot|human|real|person|ai)\b|what are you/')) {
         return assistant_answer('about', 'I am ' . ASSISTANT_NAME . ', BookNest\'s virtual assistant. I am an automated helper, not a person: '
-            . 'I answer from the library\'s help guide and, when you are signed in, from your own orders and bookings. '
+            . 'I answer from the library\'s help guide and, when you are signed in, from your own loans and bookings. '
             . 'If I cannot help, I will point you to our staff.');
     }
     if ($has('/\b(thank|thanks|thx|cheers|great|perfect)\b/') && mb_strlen($text) < 40) {
         return assistant_answer('thanks', 'You are welcome. Ask me anything else, any time.');
     }
-    $howToBuy = $has('/how (do|can|to) (i |we )?(buy|order|purchase|pay|check ?out)/');
-    if (!$howToBuy && $has('/\border(s|ed)?\b|track|where is my|parcel|my purchase/')) {
-        return assistant_order($text, $user);
+    $howToBorrow = $has('/how (do|can|to|does) (i |we )?(borrow|loan|get a book|check ?out)|how does borrowing work|can i borrow/');
+    if ($has('/\bfees?\b|\bfines?\b|\blate\b|overdue|\bowe\b|penalt/')) {
+        return assistant_fees($user);
     }
-    if ($has('/refund|return (a|my|the)|exchange|money back/')) {
-        return assistant_answer('refund', 'Unread books in good condition can be returned or exchanged within 14 days. Bring the book and your '
-            . 'order number to the front desk, or write to us and we will arrange it. Failed payments are never charged, so they need no refund.',
-            [['Email the team', 'mailto:' . TEAM_EMAIL]]);
+    if (!$howToBorrow && $has('/\bmy (loans?|books)\b|on loan|due (date|back)|when is (it|my book) due|what (have|did) i borrow|books? i borrowed/')) {
+        return assistant_loans($user);
     }
-    if (!$howToBuy && $has('/payment|\bpay\b|paying|\bcard\b|declin|charged|failed|not go through/')) {
-        return assistant_answer('payment', 'If a payment fails, you are not charged and your cart is kept, so you can simply press "Place order" again '
-            . 'or use another card. Payments are handled by our payment partner; BookNest never sees your card number. '
-            . 'If you were charged but have no confirmation, tell our staff your name and the time of the order.',
-            [['Go to checkout', 'checkout.php'], ['Email the team', 'mailto:' . TEAM_EMAIL]]);
+    if ($has('/queue|waiting list|wait.?list|in line|on hold|\bhold (a|it|the|my)\b/')) {
+        return assistant_queue($user);
     }
-    if ($has('/\broom|study|\bslot|reserve|booking|book a (room|space|table)/')) {
+    if ($has('/\breturn|bring (it|the book|a book) back|give (it )?back/')) {
+        return assistant_answer('return', 'To return a book, bring it to the front desk, or press Return next to it in My Account if you have '
+            . 'already dropped it in the returns box. Returning early is always fine. The copy then goes to the next person in the queue.',
+            [['My loans', 'account.php#loans']]);
+    }
+    if ($has('/\broom|study|\bslot|reserve (a )?(room|space)|booking|book a (room|space|table)/')) {
         return assistant_rooms($text, $user);
     }
     if ($has('/\bopen|clos(e|ed|ing)|hours|what time|address|where are you|location|directions/')) {
@@ -193,17 +212,18 @@ function assistant_reply(string $message, ?array $user): array
     }
     if ($has('/serial|bnt-\d|isbn/')) {
         if ($user && preg_match('/bnt-\d{6}/', $text, $m)) {
-            $book = db_one('SELECT id, title, author, price, stock, status FROM books WHERE serial_no = ?', [strtoupper($m[0])]);
+            $book = db_one('SELECT b.id, b.title, b.author, b.stock, b.status, ' . availability_columns() . ' FROM books b WHERE b.serial_no = ?', [strtoupper($m[0])]);
             if ($book) {
+                [$avail] = availability_label($book);
                 return assistant_answer('serial', strtoupper($m[0]) . ' is ' . $book['title'] . ' by ' . $book['author'] . ': '
-                    . money($book['price']) . ', ' . (int) $book['stock'] . ' in stock, status ' . $book['status'] . '.',
+                    . (int) $book['stock'] . ' copies owned, ' . (int) $book['on_loan'] . ' on loan, ' . lcfirst($avail) . ', status ' . $book['status'] . '.',
                     $book['status'] === 'approved' ? [[$book['title'], 'book.php?id=' . $book['id']]] : []);
             }
             return assistant_answer('serial', 'No book has the serial number ' . strtoupper($m[0]) . '. Members can add it to the library.',
                 [['Add a book', 'add-book.php']]);
         }
         return assistant_answer('serial', 'Every book has a BookNest serial number like BNT-000123, and most have an ISBN. Type either into the '
-            . 'search box at the top of any page. Members who search a serial number also see stock, status and who added the book.'
+            . 'search box at the top of any page. Members who search a serial number also see copies, loans and who added the book.'
             . ($user ? ' You can also give me a serial number here.' : ''), [['Browse books', 'catalogue.php']]);
     }
     if ($has('/password|sign.?in|log.?in|login|register|sign.?up|account|forgot|locked out/')) {
@@ -211,9 +231,9 @@ function assistant_reply(string $message, ?array $user): array
             return assistant_answer('account', 'I cannot reset passwords myself, for your security. Please email our team from the address on your '
                 . 'account, or visit the front desk with your student card, and staff will set a new one.', [['Email the team', 'mailto:' . TEAM_EMAIL]]);
         }
-        return assistant_answer('account', 'A free member account lets you book study rooms, keep a shelf, look up serial numbers and add books. '
-            . 'Creating one takes a minute: name, email and a password of at least 8 characters with a letter and a number. '
-            . 'You do not need an account to buy books.', [['Sign in or join', 'sign-in.php'], ['My Account', 'account.php']]);
+        return assistant_answer('account', 'A free member account lets you borrow books, book study rooms, keep a shelf, look up serial numbers and add books. '
+            . 'Creating one takes a minute: name, email and a password of at least 8 characters with a letter and a number.',
+            [['Sign in or join', 'sign-in.php'], ['My Account', 'account.php']]);
     }
     if ($has('/sample|preview|excerpt|read (it|a bit|first|before)|look inside/')) {
         return assistant_answer('reader', 'Every book page has a "Read a sample" or "Read a preview" button. Classics that are out of copyright show '
@@ -221,7 +241,7 @@ function assistant_reply(string $message, ?array $user): array
             . 'librarians: what the book is about, three ideas from it and who it suits.', [['Browse books', 'catalogue.php']]);
     }
     if ($has('/add a book|suggest a|submit|donat|my submission|approv/')) {
-        return assistant_answer('add-book', 'Members can add a book to the library: give its serial number, title, author, category, price and a '
+        return assistant_answer('add-book', 'Members can add a book to the library: give its serial number, title, author, category, copies and a '
             . 'synopsis. A librarian reviews each submission, usually within a day, and you can follow its status in My Account.',
             [['Add a book', 'add-book.php'], ['My submissions', 'account.php#submissions']]);
     }
@@ -229,41 +249,41 @@ function assistant_reply(string $message, ?array $user): array
         return assistant_answer('shelf', 'On any book page, press "Save to shelf" to keep it for later. Your shelf lives in My Account, where you can '
             . 'also remove books. You need to be signed in.', [['My Shelf', 'account.php#shelf']]);
     }
-    if ($has('/recommend|suggest|what should i read|something to read|good book|best.?sell|popular|similar to|books? (about|on)\b|something (about|on)\b/')) {
+    if ($has('/recommend|suggest|what should i read|something to read|good book|most borrowed|popular|similar to|books? (about|on)\b|something (about|on)\b/')) {
         return assistant_recommend($text);
     }
     if ($has('/deliver|shipping|postage|\bship\b|pick.?up|collect/')) {
-        return assistant_answer('delivery', 'Delivery within Singapore costs ' . money(DELIVERY_FEE) . ' and is free for orders of '
-            . money(FREE_DELIVERY_FROM) . ' or more; it takes up to 3 working days. Library pickup is always free and ready the next day '
-            . 'at the front desk. You choose at checkout.', [['Go to checkout', 'checkout.php']]);
+        return assistant_answer('collect', 'We do not post books. When you borrow, you choose a collection day (today or up to '
+            . COLLECT_AHEAD_DAYS . ' days ahead) and pick the book up at the front desk, ' . $hours . '. The ' . LOAN_DAYS
+            . ' day loan starts on that day.', [['My loans', 'account.php#loans']]);
     }
-    if ($howToBuy || $has('/\bcart\b|checkout|check out|guest/')) {
-        return assistant_answer('checkout', 'Press "Buy now" on a book to go straight to checkout, or "Add to cart" to keep browsing. '
-            . 'At checkout, enter your name, email and mobile number, choose delivery or pickup, and place the order. No account is needed. '
-            . 'Your cart currently holds ' . cart_count() . (cart_count() === 1 ? ' item.' : ' items.'), [['Go to checkout', 'checkout.php']]);
+    if ($howToBorrow || $has('/\bborrow|\bloans?\b|\blend|check ?out|\bbuy\b|purchase|how long can i keep|keep (a|the) book|loan period/')) {
+        return assistant_answer('borrow', 'Borrowing is free for members. Open a book, press Borrow, choose the day you will collect it and confirm. '
+            . 'You keep it for ' . LOAN_DAYS . ' days and can hold one copy of each title at a time. If every copy is out, join the queue. '
+            . 'We do not sell books.', $user ? [['See what is on the shelf', 'catalogue.php?sort=available']] : [['Sign in or join', 'sign-in.php']]);
     }
     if ($has('/human|person|staff|agent|librarian|talk to|speak (to|with)|contact|e.?mail|phone|complain|manager/')) {
         return assistant_answer('contact', 'Of course. Our staff are at the front desk every day, ' . $hours . ', at ' . BRANCH_ADDRESS
-            . '. You can also email the team and someone will reply within one working day. It helps to include your order or booking number.',
+            . '. You can also email the team and someone will reply within one working day. It helps to include your loan or booking number.',
             [['Email the team', 'mailto:' . TEAM_EMAIL]]);
     }
 
     // A question about a particular book: strip the asking words and search for what is left.
-    $term = trim(preg_replace('/\b(do you (have|sell|stock)|have you got|i am looking for|i\'m looking for|looking for|can i (buy|get)|find|search( for)?|'
-        . 'price of|how much (is|does|for)|is|are|there|cost|in stock|stock|available|the book|book|by|a copy of|any|please|you|have|got)\b|[?!.,"]/', ' ', $text));
+    $term = trim(preg_replace('/\b(do you (have|stock)|have you got|i am looking for|i\'m looking for|looking for|can i (get|read)|find|search( for)?|'
+        . 'is|are|there|in stock|stock|available|the book|book|by|a copy of|any|please|you|have|got)\b|[?!.,"]/', ' ', $text));
     $term = preg_replace('/\s+/', ' ', $term);
     if ($books = assistant_find_books($term)) {
         [$line, $links] = assistant_book_lines($books);
         return assistant_answer('book-search', (count($books) === 1 ? 'Yes, we have it: ' : 'Here is what I found: ') . $line, $links);
     }
-    if ($has('/do you (have|sell|stock)|looking for|price of|how much|in stock|\bfind\b|search/')) {
+    if ($has('/do you (have|stock|sell)|looking for|in stock|available|\bfind\b|search/')) {
         return assistant_answer('book-search', 'I could not find a book matching "' . $term . '". Check the spelling, try the author\'s surname, '
             . 'or search by ISBN. If we really do not have it, members can suggest it.',
             [['Search the catalogue', 'catalogue.php'], ['Suggest a book', 'add-book.php']], false);
     }
     if ($has('/\b(hi|hello|hey|hiya|good (morning|afternoon|evening))\b/')) {
-        return assistant_answer('greeting', 'Hello' . ($user ? ', ' . first_name($user) : '') . '. I can help with orders, study rooms, opening hours, '
-            . 'delivery, your account, or finding a book. What do you need?');
+        return assistant_answer('greeting', 'Hello' . ($user ? ', ' . first_name($user) : '') . '. I can help with borrowing, your loans, '
+            . 'late fees, queues, study rooms, opening hours, your account, or finding a book. What do you need?');
     }
 
     // Nothing matched: say so honestly and offer the human route. The question is logged for staff.
@@ -278,7 +298,7 @@ function assistant_widget(): string
     $messages = assistant_messages();
     $open = !empty($_SESSION['assistant_open']);
     unset($_SESSION['assistant_open']);
-    $quick = ['Opening hours', 'Where is my order?', 'Book a study room', 'Delivery fees', 'Recommend a book', 'Talk to a person'];
+    $quick = ['Opening hours', 'What do I have on loan?', 'How do I borrow?', 'Late fees', 'Book a study room', 'Recommend a book', 'Talk to a person'];
 
     $html = '<details class="assistant" id="assistant"' . ($open ? ' open' : '') . ' data-assistant>'
         . '<summary class="assistant-launcher"><span class="assistant-avatar" aria-hidden="true">P</span>'
@@ -289,7 +309,7 @@ function assistant_widget(): string
         . '<div class="assistant-log" role="log" aria-live="polite" tabindex="0" aria-label="Conversation with ' . ASSISTANT_NAME . '" data-assistant-log>';
 
     $html .= '<div class="msg msg-bot"><p>Hello, I am ' . ASSISTANT_NAME . ', BookNest\'s virtual assistant. I am automated, not a person. '
-        . 'Ask me about orders, study rooms, opening hours, delivery or finding a book.</p></div>';
+        . 'Ask me about borrowing, your loans, late fees, queues, study rooms, opening hours or finding a book.</p></div>';
     foreach ($messages as $m) {
         $html .= '<div class="msg msg-' . ($m['from'] === 'user' ? 'user' : 'bot') . '"><span class="visually-hidden">'
             . ($m['from'] === 'user' ? 'You said: ' : ASSISTANT_NAME . ' said: ') . '</span><p>' . e($m['text']) . '</p>';

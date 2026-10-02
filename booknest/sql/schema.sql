@@ -37,11 +37,11 @@ CREATE TABLE books (
   synopsis       TEXT         NOT NULL,
   sample_text    LONGTEXT     NULL,
   sample_type    ENUM('excerpt','preview') NOT NULL DEFAULT 'excerpt',
-  price          DECIMAL(8,2) NOT NULL,
+  price          DECIMAL(8,2) NOT NULL DEFAULT 0.00,  -- replacement value, for staff only; never shown to members
   rating         DECIMAL(2,1) NOT NULL DEFAULT 0.0,
   published_year SMALLINT     NOT NULL,
   pages          SMALLINT UNSIGNED NOT NULL,
-  stock          SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+  stock          SMALLINT UNSIGNED NOT NULL DEFAULT 0,  -- copies the library owns; copies on the shelf are worked out live
   cover_path     VARCHAR(120) NOT NULL,
   cover_alt      VARCHAR(200) NOT NULL,
   is_featured    TINYINT(1)   NOT NULL DEFAULT 0,
@@ -59,35 +59,38 @@ CREATE TABLE books (
   CONSTRAINT fk_books_user FOREIGN KEY (added_by) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
-CREATE TABLE orders (
+-- Loans: one row per book borrowed. Late fees are never stored; they are worked out from the dates.
+CREATE TABLE loans (
   id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  user_id         INT UNSIGNED NULL,
-  email           VARCHAR(120) NOT NULL,
-  full_name       VARCHAR(80)  NOT NULL,
-  phone           VARCHAR(20)  NOT NULL,
-  delivery_method ENUM('delivery','pickup') NOT NULL,
-  address         VARCHAR(200) NULL,
-  note            VARCHAR(300) NULL,
-  subtotal        DECIMAL(10,2) NOT NULL,
-  delivery_fee    DECIMAL(6,2)  NOT NULL DEFAULT 0,
-  total           DECIMAL(10,2) NOT NULL,
-  payment_status  ENUM('pending','paid','failed') NOT NULL DEFAULT 'pending',
+  user_id         INT UNSIGNED NOT NULL,
+  book_id         INT UNSIGNED NOT NULL,
+  collection_date DATE NOT NULL,
+  due_date        DATE NOT NULL,
+  returned_date   DATE NULL,
+  status          ENUM('reserved','active','overdue','returned') NOT NULL DEFAULT 'reserved',
+  renewals        TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  fee_cleared_at  DATETIME NULL,
   created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  KEY ix_orders_user (user_id),
-  KEY ix_orders_status_date (payment_status, created_at),
-  CONSTRAINT fk_orders_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+  KEY ix_loans_book_status (book_id, status),
+  KEY ix_loans_user_status (user_id, status),
+  KEY ix_loans_status_due (status, due_date),
+  KEY ix_loans_created (created_at),
+  CONSTRAINT fk_loans_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_loans_book FOREIGN KEY (book_id) REFERENCES books(id)
 ) ENGINE=InnoDB;
 
-CREATE TABLE order_items (
-  id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  order_id    INT UNSIGNED NOT NULL,
-  book_id     INT UNSIGNED NOT NULL,
-  qty         SMALLINT UNSIGNED NOT NULL,
-  unit_price  DECIMAL(8,2) NOT NULL,
-  KEY ix_items_order (order_id),
-  KEY ix_items_book (book_id),
-  CONSTRAINT fk_items_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
-  CONSTRAINT fk_items_book FOREIGN KEY (book_id) REFERENCES books(id)
+-- Queue for books with no copy on the shelf. "offered" means a copy is held for that member.
+CREATE TABLE book_queue (
+  id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  book_id    INT UNSIGNED NOT NULL,
+  user_id    INT UNSIGNED NOT NULL,
+  queued_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  status     ENUM('waiting','offered','expired','borrowed','left') NOT NULL DEFAULT 'waiting',
+  offered_at DATETIME NULL,
+  KEY ix_queue_book_status (book_id, status, queued_at),
+  KEY ix_queue_user_status (user_id, status),
+  CONSTRAINT fk_queue_book FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE,
+  CONSTRAINT fk_queue_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 CREATE TABLE study_rooms (

@@ -137,7 +137,7 @@ function field_error_html(string $form, string $key): string
         . ($err ? '' : ' hidden') . '>' . e($err) . '</p>';
 }
 
-// Formats a price in Singapore dollars.
+// Formats an amount in Singapore dollars (used for late fees and, for staff, replacement values).
 function money(float|string|null $amount): string
 {
     return 'S$' . number_format((float) $amount, 2);
@@ -166,18 +166,6 @@ function rating_html(float|string $rating): string
 {
     $r = number_format((float) $rating, 1);
     return '<span class="rating"><span aria-hidden="true">&#9733; ' . $r . '</span><span class="visually-hidden">Rated ' . $r . ' out of 5</span></span>';
-}
-
-// Describes stock in words, as the customer would want to hear it.
-function stock_label(int $stock): array
-{
-    if ($stock <= 0) {
-        return ['Out of stock', 'is-out'];
-    }
-    if ($stock <= 3) {
-        return ['Only ' . $stock . ' left', 'is-low'];
-    }
-    return ['In stock', 'is-in'];
 }
 
 // Reports whether the library is open now and the next change of state.

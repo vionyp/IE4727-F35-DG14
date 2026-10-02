@@ -15,7 +15,7 @@ require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/flash.php';
 require_once __DIR__ . '/csrf.php';
 require_once __DIR__ . '/auth.php';
-require_once __DIR__ . '/cart.php';
+require_once __DIR__ . '/loans.php';
 require_once __DIR__ . '/mail.php';
 require_once __DIR__ . '/rooms.php';
 require_once __DIR__ . '/covers.php';
@@ -24,6 +24,7 @@ require_once __DIR__ . '/assistant.php';
 
 set_exception_handler('handle_fatal');
 start_secure_session();
+loans_sync();
 
 // Logs an uncaught error and shows a calm message instead of a stack trace.
 function handle_fatal(Throwable $e): void

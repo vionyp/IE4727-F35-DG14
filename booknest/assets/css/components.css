@@ -101,7 +101,7 @@
 .search-btn:hover { background: var(--accent-hover); }
 
 .header-actions { grid-area: actions; display: flex; align-items: center; gap: var(--s2); }
-.cart-link, .account-link {
+.loans-link, .account-link {
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -114,8 +114,8 @@
   font-weight: 550;
   transition: background-color var(--fast) var(--ease);
 }
-.cart-link:hover, .account-link:hover { background: var(--elevated); color: var(--text); }
-.cart-link[aria-current="page"], .account-link[aria-current="page"] { background: var(--elevated); }
+.loans-link:hover, .account-link:hover { background: var(--elevated); color: var(--text); }
+.loans-link[aria-current="page"], .account-link[aria-current="page"] { background: var(--elevated); }
 /* On phones the account text is hidden visually but still read out by screen readers. */
 .account-link span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .badge {

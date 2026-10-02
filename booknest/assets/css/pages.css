@@ -264,36 +264,54 @@ code { font-family: Consolas, "SFMono-Regular", Menlo, monospace; font-size: .88
   .js .reader .reader-book::after { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 2px; transform: translateX(-1px); background: rgba(0, 0, 0, .18); z-index: 4; pointer-events: none; }
 }
 
-/* Checkout -------------------------------------------------------------------- */
-.checkout-grid { display: grid; gap: var(--s5); align-items: start; }
-.checkout-form .panel-title { margin-bottom: 0; }
-.cart-lines { list-style: none; padding: 0; display: grid; gap: var(--s4); }
-.cart-line { display: grid; grid-template-columns: 56px 1fr auto; gap: var(--s3); align-items: start; padding-bottom: var(--s4); border-bottom: 1px solid var(--border); }
-.line-cover { width: 56px; border-radius: 4px; box-shadow: var(--shadow); }
-.cart-line-body { display: grid; gap: .15rem; min-width: 0; }
-.cart-line-title { color: var(--text); font-weight: 650; text-decoration: none; }
-.cart-line-title:hover { text-decoration: underline; color: var(--text); }
-.cart-line-total { font-weight: 650; font-variant-numeric: tabular-nums; }
-.qty-form { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; margin-top: var(--s2); }
-.qty-input { width: 4.2rem; min-height: 36px; padding: .3rem .5rem; background: var(--bg); border: 1px solid var(--input-border); border-radius: var(--radius-sm); color: var(--text); }
-.totals { display: grid; gap: var(--s2); margin-top: var(--s4); }
-.totals div { display: flex; justify-content: space-between; }
-.totals dt { color: var(--muted); }
-.totals dd { margin: 0; font-variant-numeric: tabular-nums; }
-.totals .grand { padding-top: var(--s3); border-top: 1px solid var(--border); font-size: var(--step-1); font-weight: 700; }
-.totals .grand dt { color: var(--text); }
-.simulator { padding: var(--s4); border: 1px dashed var(--border-strong); border-radius: var(--radius); }
-.simulator legend { display: flex; gap: var(--s2); align-items: center; padding-inline: var(--s2); }
+/* Availability and borrowing ------------------------------------------------- */
+.avail { display: inline-flex; align-items: center; gap: .4rem; font-weight: 650; font-size: var(--step--1); color: var(--muted); }
+.avail::before { content: ""; width: .55rem; height: .55rem; border-radius: 50%; background: currentColor; flex: none; }
+.avail.is-in { color: var(--teal); }
+.avail.is-low { color: var(--accent); }
+.avail.is-out { color: var(--danger); }
+.avail.is-mine { color: var(--focus); }
+.avail-note { display: block; color: var(--muted); font-size: var(--step--1); margin-top: .15rem; }
+.card-meta { flex-wrap: wrap; row-gap: .2rem; }
+.card-meta .avail { flex-basis: 100%; font-size: .78rem; }
+.card-meta .avail-note { display: none; }
+.avail-line { margin-top: var(--s3); }
+.avail-box { margin-top: var(--s5); padding: var(--s4) var(--s5); border-radius: var(--radius); background: rgba(23, 27, 34, .6); border: 1px solid var(--border); }
+.avail-box .avail-line { margin-top: 0; }
+.avail-lg .avail { font-size: var(--step-1); }
+.avail-lg .avail::before { width: .7rem; height: .7rem; }
+.borrow-grid { display: grid; gap: var(--s5); align-items: start; }
+.borrow-book { display: grid; grid-template-columns: auto 1fr; gap: var(--s4); align-items: start; }
+.borrow-cover { width: clamp(80px, 22vw, 130px); border-radius: var(--radius-sm); box-shadow: var(--shadow); }
+.borrow-form { display: grid; gap: var(--s4); }
+.borrow-form .panel-title, .borrow-form .notice { margin: 0; }
+.rules-list { list-style: none; padding: 0; display: grid; gap: var(--s2); color: var(--muted); }
+.rules-list li { display: flex; gap: var(--s2); align-items: flex-start; }
+.rules-list .icon { color: var(--accent); flex: none; margin-top: .15rem; }
 .choice strong .icon { display: inline-block; vertical-align: -3px; margin-right: .3rem; color: var(--accent); }
-.confirmation { max-width: 760px; margin: var(--s7) auto 0; }
-.confirmation h1 { font-size: var(--step-4); margin-block: var(--s2) var(--s4); }
-.order-lines { list-style: none; padding: 0; display: grid; gap: var(--s3); margin-block: var(--s5); }
-.order-lines li { display: flex; gap: var(--s3); align-items: center; }
-.order-lines div { display: grid; }
-.order-total { font-size: var(--step-1); margin-bottom: var(--s5); }
-@media (min-width: 960px) {
-  .checkout-grid { grid-template-columns: 1.35fr 1fr; gap: var(--s6); }
-  .summary { position: sticky; top: calc(var(--header-h) + var(--s4)); order: 2; }
+@media (min-width: 900px) {
+  .borrow-grid { grid-template-columns: 1fr 1.2fr; gap: var(--s6); }
+}
+
+/* Loans in My Account ----------------------------------------------------------- */
+.line-cover { width: 56px; border-radius: 4px; box-shadow: var(--shadow); }
+.loan-list { display: grid; gap: var(--s3); list-style: none; padding: 0; }
+.loan-item { display: grid; grid-template-columns: 56px 1fr; gap: var(--s4); align-items: center; padding: var(--s4); background: var(--panel-fill) padding-box, var(--edge) border-box; border: 1px solid transparent; border-radius: var(--radius-lg); }
+.loan-item.is-overdue { background: linear-gradient(rgba(229, 97, 90, .08), rgba(229, 97, 90, .08)) padding-box, linear-gradient(135deg, rgba(229, 97, 90, .6), rgba(229, 97, 90, .15)) border-box; }
+.loan-item.is-highlight { box-shadow: 0 0 0 2px var(--accent); }
+.loan-body h3 { font-size: var(--step-1); }
+.loan-body h3 a { color: var(--text); text-decoration: none; }
+.loan-body h3 a:hover { text-decoration: underline; }
+.loan-body p { margin-top: .25rem; color: var(--muted); }
+.loan-body .avail { margin-right: var(--s2); }
+.loan-action { grid-column: 1 / -1; }
+.subsection-title { font-size: var(--step-1); margin-block: var(--s6) var(--s3); }
+.history { margin-top: var(--s5); }
+.tile-alert { background: linear-gradient(rgba(229, 97, 90, .1), rgba(229, 97, 90, .1)) padding-box, linear-gradient(135deg, rgba(229, 97, 90, .6), rgba(229, 97, 90, .15)) border-box; }
+.overdue-fee { color: var(--danger); white-space: nowrap; }
+@media (min-width: 640px) {
+  .loan-item { grid-template-columns: 56px 1fr auto; }
+  .loan-action { grid-column: auto; justify-self: end; }
 }
 
 /* Study rooms ------------------------------------------------------------------- */

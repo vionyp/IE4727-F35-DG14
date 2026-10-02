@@ -3,9 +3,9 @@
 require __DIR__ . '/includes/bootstrap.php';
 
 $cols = card_columns();
-$featured = db_one("SELECT b.*, c.name AS category, c.slug AS category_slug FROM books b JOIN categories c ON c.id = b.category_id
+$featured = db_one("SELECT b.*, " . availability_columns() . ", c.name AS category, c.slug AS category_slug FROM books b JOIN categories c ON c.id = b.category_id
                     WHERE b.status = 'approved' AND b.is_featured = 1 ORDER BY b.id LIMIT 1")
-    ?? db_one("SELECT b.*, c.name AS category, c.slug AS category_slug FROM books b JOIN categories c ON c.id = b.category_id
+    ?? db_one("SELECT b.*, " . availability_columns() . ", c.name AS category, c.slug AS category_slug FROM books b JOIN categories c ON c.id = b.category_id
                WHERE b.status = 'approved' ORDER BY b.rating DESC LIMIT 1");
 
 $newArrivals = db_all("SELECT $cols FROM books b WHERE b.status = 'approved' ORDER BY b.created_at DESC LIMIT 12");
@@ -48,7 +48,7 @@ foreach (availability(date('Y-m-d'), $rooms, user_id()) as $slots) {
 }
 $status = library_status();
 
-$page_title = 'Browse, sample and buy books';
+$page_title = 'Browse, sample and borrow books';
 $body_class = 'page-home';
 $scripts = ['rows.js', 'forms.js'];
 require __DIR__ . '/includes/header.php';
@@ -63,13 +63,9 @@ require __DIR__ . '/includes/header.php';
       <h1 id="billboard-title"><?= e($featured['title']) ?></h1>
       <p class="billboard-meta"><?= e($featured['author']) ?> · <?= e(year_label((int) $featured['published_year'])) ?> · <?= rating_html($featured['rating']) ?></p>
       <p class="billboard-hook"><?= e($featured['hook']) ?></p>
+      <p class="avail-line"><?= availability_html($featured) ?></p>
       <div class="cluster billboard-actions">
-        <form action="<?= e(url('process/cart.php')) ?>" method="post">
-          <?= csrf_field() ?>
-          <input type="hidden" name="action" value="buy">
-          <input type="hidden" name="book_id" value="<?= (int) $featured['id'] ?>">
-          <button class="btn btn-primary" type="submit"<?= $featured['stock'] > 0 ? '' : ' disabled' ?>>Buy now · <?= money($featured['price']) ?></button>
-        </form>
+        <a class="btn btn-primary" href="<?= e(url('borrow.php?id=' . $featured['id'])) ?>"><?= icon('books', 18) ?> Borrow it free</a>
         <a class="btn btn-secondary" href="<?= e(url('read.php?id=' . $featured['id'])) ?>"><?= icon('book', 18) ?> Read a <?= sample_word($featured) ?></a>
         <a class="btn-link" href="<?= e(book_url((int) $featured['id'])) ?>">About this book</a>
       </div>
@@ -94,6 +90,7 @@ require __DIR__ . '/includes/header.php';
       <?php endif; ?>
     </div>
     <ul class="welcome-links" role="list">
+      <li><a class="btn btn-secondary" href="<?= e(url('account.php#loans')) ?>"><?= icon('books', 18) ?> My loans (<?= count(my_loans()) ?>)</a></li>
       <li><a class="btn btn-secondary" href="<?= e(url('account.php#shelf')) ?>"><?= icon('bookmark', 18) ?> My Shelf (<?= $shelfCount ?>)</a></li>
       <li><a class="btn btn-secondary" href="<?= e(url('rooms.php')) ?>"><?= icon('door', 18) ?> Study rooms</a></li>
       <li><a class="btn btn-secondary" href="<?= e(url('add-book.php')) ?>"><?= icon('plus', 18) ?> Add a book</a></li>
@@ -106,7 +103,7 @@ require __DIR__ . '/includes/header.php';
       <ol class="points" role="list">
         <li><span class="point-num">1</span><div><strong>Find it</strong><p>Search by title, author or serial number from any page.</p></div></li>
         <li><span class="point-num">2</span><div><strong>Try it</strong><p>Read a sample or a short preview of any book before you decide.</p></div></li>
-        <li><span class="point-num">3</span><div><strong>Keep it</strong><p>Buy without an account, or join to book study rooms and keep a shelf.</p></div></li>
+        <li><span class="point-num">3</span><div><strong>Borrow it</strong><p>Join for free, pick a collection day and keep the book for <?= LOAN_DAYS ?> days. Members can book study rooms too.</p></div></li>
       </ol>
     </div>
     <div class="panel sign-in-card">

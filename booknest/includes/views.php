@@ -6,7 +6,9 @@ function icon(string $name, int $size = 20): string
 {
     $paths = [
         'search' => '<circle cx="11" cy="11" r="7"/><path d="m20 20-4.2-4.2"/>',
-        'cart' => '<path d="M3 4h2l2.4 11.2a2 2 0 0 0 2 1.6h7.9a2 2 0 0 0 2-1.5L21 8H6.2"/><circle cx="10" cy="20" r="1.3"/><circle cx="18" cy="20" r="1.3"/>',
+        'books' => '<path d="M4 4h4v16H4zM10 4h4v16h-4z"/><path d="m16 5 3.8-1 2.2 15.4-3.8 1z"/>',
+        'queue' => '<circle cx="7" cy="7" r="2.5"/><circle cx="17" cy="7" r="2.5"/><path d="M2.5 19a4.5 4.5 0 0 1 9 0M12.5 19a4.5 4.5 0 0 1 9 0"/>',
+        'return' => '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
         'user' => '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
         'menu' => '<path d="M4 7h16M4 12h16M4 17h16"/>',
         'left' => '<path d="m15 5-7 7 7 7"/>',
@@ -23,7 +25,6 @@ function icon(string $name, int $size = 20): string
         'plus' => '<path d="M12 5v14M5 12h14"/>',
         'door' => '<path d="M5 21V4a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v17"/><path d="M3 21h18"/><circle cx="15" cy="12" r="1"/>',
         'chart' => '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
-        'truck' => '<path d="M3 6h11v10H3zM14 10h4l3 3v3h-7"/><circle cx="7" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/>',
         'mail' => '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
     ];
     return '<svg class="icon" width="' . $size . '" height="' . $size . '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">'
@@ -66,7 +67,7 @@ function book_card(array $b, bool $lazy = true): string
         . '<span class="card-hook">' . e($b['hook']) . '</span><span class="card-cta">View details</span></span></span>'
         . '<span class="card-title">' . e($b['title']) . '</span></a>'
         . '<p class="card-author">' . e($b['author']) . '</p>'
-        . '<p class="card-meta">' . rating_html($b['rating']) . '<span class="card-price">' . money($b['price']) . '</span></p>'
+        . '<p class="card-meta">' . rating_html($b['rating']) . availability_html($b, 'card-avail') . '</p>'
         . '</article>';
 }
 
@@ -123,8 +124,9 @@ function year_label(int $year): string
     return $year < 0 ? 'c. ' . abs($year) . ' BC' : (string) $year;
 }
 
-// Returns the shared SELECT column list for book cards.
+// Returns the shared SELECT column list for book cards, including the live copy counts.
 function card_columns(string $alias = 'b'): string
 {
-    return "$alias.id, $alias.serial_no, $alias.title, $alias.author, $alias.hook, $alias.price, $alias.rating, $alias.stock, $alias.cover_path, $alias.cover_alt, $alias.category_id, $alias.created_at";
+    return "$alias.id, $alias.serial_no, $alias.title, $alias.author, $alias.hook, $alias.rating, $alias.stock, $alias.cover_path, $alias.cover_alt, $alias.category_id, $alias.created_at, "
+        . availability_columns($alias);
 }

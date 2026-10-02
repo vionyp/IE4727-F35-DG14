@@ -1,12 +1,12 @@
 <?php
 // Shared page header. Set $page_title, and optionally $page_desc, $body_class, $crumbs and $scripts, before including.
 $page_title ??= 'Home';
-$page_desc ??= 'BookNest is an online library where you can browse, sample and buy books, and book a quiet study room.';
+$page_desc ??= 'BookNest is an online library where you can browse, sample and borrow books, and book a quiet study room.';
 $body_class ??= '';
 $crumbs ??= [];
 $scripts ??= [];
 $user = current_user();
-$count = cart_count();
+$onLoan = $user ? count(my_loans()) : 0;
 $nav = [['index.php', 'Home'], ['catalogue.php', 'Browse'], ['rooms.php', 'Study Rooms']];
 if (is_admin()) {
     $nav[] = ['admin.php', 'Admin'];
@@ -68,11 +68,11 @@ $searchValue = is_page('catalogue.php') ? input($_GET, 'q', 100) : '';
     </form>
 
     <div class="header-actions">
-      <a class="cart-link<?= is_page('checkout.php') ? ' is-active' : '' ?>" href="<?= e(url('checkout.php')) ?>"<?= is_page('checkout.php') ? ' aria-current="page"' : '' ?>>
-        <?= icon('cart') ?><span class="visually-hidden">Cart,</span>
-        <span class="badge<?= $count ? '' : ' is-empty' ?>"><?= $count ?></span><span class="visually-hidden"> <?= $count === 1 ? 'item' : 'items' ?></span>
-      </a>
       <?php if ($user): ?>
+      <a class="loans-link" href="<?= e(url('account.php#loans')) ?>">
+        <?= icon('books') ?><span class="visually-hidden">My loans,</span>
+        <span class="badge<?= $onLoan ? '' : ' is-empty' ?>"><?= $onLoan ?></span><span class="visually-hidden"> <?= $onLoan === 1 ? 'book' : 'books' ?> on loan</span>
+      </a>
       <a class="account-link" href="<?= e(url('account.php')) ?>"<?= is_page('account.php') ? ' aria-current="page"' : '' ?>><?= icon('user', 18) ?><span>My Account</span></a>
       <?php else: ?>
       <a class="account-link" href="<?= e(url('sign-in.php')) ?>"<?= is_page('sign-in.php') ? ' aria-current="page"' : '' ?>><?= icon('user', 18) ?><span>Sign in</span></a>

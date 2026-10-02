@@ -1,6 +1,7 @@
 # BookNest
 
-An online library for browsing, sampling and buying books, and booking quiet study rooms.
+An online library for browsing, sampling and borrowing books, and booking quiet study rooms.
+Members borrow a book for 14 days, queue for popular titles, and see any late fees live in My Account.
 IE4727 Web Application Design, Theme 6 (Online Library). Base Version: HTML5, CSS3, vanilla
 JavaScript, PHP and MySQL only.
 

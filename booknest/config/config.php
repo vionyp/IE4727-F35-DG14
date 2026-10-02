@@ -34,13 +34,11 @@ define('MAX_BOOKING_MINUTES', 60);
 define('DAILY_CAP_MINUTES', 60);
 define('ADVANCE_DAYS', 7);
 
-// Shop
-define('DELIVERY_FEE', 3.50);
-define('FREE_DELIVERY_FROM', 40.00);
-define('MAX_QTY_PER_BOOK', 10);
-
-// Payment is handled by a third party; the simulator lets the demo choose the outcome.
-define('PAYMENT_SIMULATOR', true);
+// Lending rules (PHP enforces every one of them)
+define('LOAN_DAYS', 14);               // a loan runs 14 days from the collection date
+define('COLLECT_AHEAD_DAYS', 7);       // the collection date can be today up to 7 days ahead
+define('QUEUE_HOLD_DAYS', 2);          // the next reader in a queue has 2 days to borrow a returned copy
+define('LATE_FEE_PER_DAY', 0.50);      // in SGD, for every day after the due date
 
 // Mail: only local accounts on the XAMPP mail server (Mercury) may receive email.
 define('MAIL_LOCAL_DOMAIN', '@localhost');

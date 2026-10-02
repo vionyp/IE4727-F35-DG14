@@ -1,4 +1,4 @@
-/* Print: clean black on white for order and booking confirmations, no navigation chrome. */
+/* Print: clean black on white for loan and booking confirmations, no navigation chrome. */
 @page { margin: 18mm; }
 
 * { background: #fff !important; color: #000 !important; box-shadow: none !important; text-shadow: none !important; }
