@@ -10,7 +10,7 @@ $registerFirst = form_state()['name'] === 'register';
 $rememberedEmail = is_string($_COOKIE[EMAIL_COOKIE] ?? null) ? $_COOKIE[EMAIL_COOKIE] : '';
 
 $page_title = 'Sign in or join';
-$page_desc = 'Sign in to book study rooms, keep a shelf and add books, or create a free account.';
+$page_desc = 'Sign in to borrow books, book study rooms, keep a shelf and add books, or create a free account.';
 $body_class = 'page-signin';
 $scripts = ['forms.js'];
 require __DIR__ . '/includes/header.php';
@@ -21,9 +21,10 @@ require __DIR__ . '/includes/header.php';
     <img src="<?= e(url('assets/img/reading-lamp.svg')) ?>" alt="Illustration of a desk lamp lighting an open book at night" width="520" height="420">
     <h1 id="signin-why">Your corner of the library.</h1>
     <ul class="perks" role="list">
+      <li><?= icon('books', 20) ?><span><strong>Borrow books</strong> free for <?= LOAN_DAYS ?> days, or queue for popular ones.</span></li>
       <li><?= icon('door', 20) ?><span><strong>Book study rooms</strong> for up to an hour a day.</span></li>
       <li><?= icon('bookmark', 20) ?><span><strong>Keep a shelf</strong> of books to read next.</span></li>
-      <li><?= icon('search', 20) ?><span><strong>Look up serial numbers</strong> with stock and full details.</span></li>
+      <li><?= icon('search', 20) ?><span><strong>Look up serial numbers</strong> with copies and loan details.</span></li>
       <li><?= icon('plus', 20) ?><span><strong>Add books</strong> you think we should stock.</span></li>
     </ul>
   </section>

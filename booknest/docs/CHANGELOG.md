@@ -1,5 +1,59 @@
 # Changelog
 
+## 2026-10-02: Borrowing instead of buying (Phase 1 of the borrowing brief)
+
+Why: our course theme is *Online Library*. Selling books did not fit it, so the core transaction is
+now a loan. This changes the data model and several pages, not only the wording.
+
+- **Rules** (all enforced in PHP, constants in `config/config.php`): loans last `LOAN_DAYS` = 14 days
+  from a collection date the member picks (today up to `COLLECT_AHEAD_DAYS` = 7 days ahead); one open
+  loan per title; when no copy is on the shelf, members join a queue; a returned copy is offered to
+  the first person in line and held for `QUEUE_HOLD_DAYS` = 2 days; late returns cost
+  `LATE_FEE_PER_DAY` = S$0.50 a day after the due date, worked out live from the dates.
+- **Database:** `orders` and `order_items` replaced by `loans` and `book_queue`. `books.stock` now
+  means copies owned; copies on the shelf are calculated (owned minus open loans minus held copies).
+  `books.price` stays as a staff-only replacement value and defaults to 0. `loans.renewals` and
+  `loans.fee_cleared_at` are created now for the next two phases and are not used yet.
+- **No price anywhere for members.** Cards, the book page, the billboard, the reader, the serial
+  lookup and Paige show availability instead: "Available to borrow", "Due back in X days",
+  "X days overdue" (red), "Borrowed until [date]", "N people waiting", "You are #2 in line".
+- **Pages:** `checkout.php` became `borrow.php` (pick a collection date, confirm), so the site still
+  has ten pages. `book.php` offers Borrow, Join the queue, Leave the queue or Borrow your held copy.
+  `account.php` lists loans with due dates, fees so far and a Return button, the queue places,
+  and recent returns; its tiles show books on loan and fees owed. `admin.php` replaces revenue with
+  books on loan, overdue loans, late fees outstanding, people in queues, most borrowed books, loans
+  by category, longest queues and the overdue list. The header cart became a "My loans" count.
+- **Code:** new `includes/loans.php` (rules, availability, fees, queue) and `process/loan.php`
+  (borrow, queue, leave, return). Removed `includes/cart.php`, `process/cart.php`,
+  `process/checkout.php`, the delivery toggle in `forms.js` and the checkout styles. Every action
+  that changes copies on the shelf locks the book row (`SELECT ... FOR UPDATE`). A small
+  `loans_sync()` runs once per request, because XAMPP has no scheduler, to move loans from reserved
+  to active to overdue and to expire holds.
+- **Admin:** copies can no longer be set below the copies out or held; new copies go straight to
+  the queue; a book that has ever been borrowed cannot be deleted. The member Add a book form no
+  longer asks for a price.
+- **Emails:** loan confirmed (with due date), your reserved book is ready, hold ended, returned
+  (with any fee), reservation cancelled. Still only to `@localhost`.
+- **Paige:** order, payment, refund, delivery and checkout answers became loans, late fees, queue,
+  return, collection and how to borrow. Quick buttons updated. She still never shows one member's
+  loans to anyone else.
+- **Seed:** `tools/build-seed.php` now writes 68 loans (57 returned over the last 90 days for the
+  charts) and 5 queue places, with every state on show: due soon, 1, 4 and 12 days overdue, a
+  reservation, a 3 person queue, and a copy held for the next reader. Library copies are 1 to 5 per
+  title.
+- **Tests:** the cart and payment checks (T09 to T14, T28) were replaced, not just deleted, by
+  borrowing checks, and T60 to T65 were added: late fee at 5 days, return stops the fee, two members
+  racing for the last copy, a hold expiring, staff adding a copy, staff lowering copies. T04, T37,
+  T39b, T53 to T55 now check loans instead of sales. Result: **59 of 59 E2E checks pass**,
+  Paige 42 of 42.
+- **Found on the way:** the serial lookup field on Add a book still had the old `MRG-` pattern, so
+  the browser refused valid `BNT-` serials; fixed. Cards showed "Borrowed until" a date already past
+  when the loan was overdue; it now says "Borrowed, return overdue".
+- **Docs:** `REQUIREMENTS.md` (F5 rewritten as FR-20 to FR-24, FR-01, 04, 08, 11 to 13, 18, 33, 35,
+  39, 41, 44, 45), `SITEMAP.md`, `STORYBOARD.md` (Three Click audit: borrow is 3 clicks, join a queue
+  2, return 3), `WIREFRAMES.md`, `IMPLEMENTATION.md` (new section 11 with the judgment calls),
+  `SETUP.md`, `TEST_LOG.md`, `README.md`.
+
 ## 2026-10-01: Paige, the help assistant (Mathew)
 
 - New on every page: **Paige**, a virtual assistant in the header, to the right of the account link, whose chat panel drops down from the bar

@@ -11,7 +11,6 @@ $f = [
     'title' => preg_replace('/\s+/', ' ', input($_POST, 'title', 150)),
     'author' => preg_replace('/\s+/', ' ', input($_POST, 'author', 100)),
     'category_id' => input_int($_POST, 'category_id'),
-    'price' => input($_POST, 'price', 10),
     'published_year' => input($_POST, 'published_year', 5),
     'pages' => input($_POST, 'pages', 5),
     'stock' => input($_POST, 'stock', 4),
@@ -35,9 +34,6 @@ if (mb_strlen($f['author']) < 2) {
 }
 if (!db_value('SELECT 1 FROM categories WHERE id = ?', [$f['category_id']])) {
     $errors['category_id'] = 'Choose a category.';
-}
-if (!preg_match('/^\d{1,3}(\.\d{1,2})?$/', $f['price']) || (float) $f['price'] < 0.5 || (float) $f['price'] > 500) {
-    $errors['price'] = 'Enter a price from 0.50 to 500.00, with up to two decimals.';
 }
 if (!ctype_digit($f['published_year']) || (int) $f['published_year'] < 1450 || (int) $f['published_year'] > $thisYear) {
     $errors['published_year'] = "Enter a year from 1450 to $thisYear.";
@@ -66,11 +62,11 @@ $category = db_value('SELECT name FROM categories WHERE id = ?', [$f['category_i
 $seed = (int) substr($f['serial_no'], 4);
 $cover = write_cover($f['serial_no'], $f['title'], $f['author'], $seed, (string) $category);
 
-db_exec("INSERT INTO books (serial_no, title, author, category_id, hook, synopsis, sample_text, price, rating, published_year,
+db_exec("INSERT INTO books (serial_no, title, author, category_id, hook, synopsis, sample_text, rating, published_year,
                             pages, stock, cover_path, cover_alt, status, added_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.0, ?, ?, ?, ?, ?, 'pending', ?)",
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0.0, ?, ?, ?, ?, ?, 'pending', ?)",
     [$f['serial_no'], $f['title'], $f['author'], $f['category_id'], $hook, $f['synopsis'], $f['sample_text'] ?: null,
-     $f['price'], (int) $f['published_year'], (int) $f['pages'], (int) $f['stock'], $cover,
+     (int) $f['published_year'], (int) $f['pages'], (int) $f['stock'], $cover,
      'Cover of ' . $f['title'] . ' by ' . $f['author'] . ': title lettering on a geometric design', $user['id']]);
 
 flash('success', 'Thank you. ' . $f['title'] . ' (' . $f['serial_no'] . ') has been sent to our librarians. It will appear in the catalogue once approved.');

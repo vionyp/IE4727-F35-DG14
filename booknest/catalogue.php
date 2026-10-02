@@ -13,8 +13,7 @@ $sorts = [
     'title' => ['Title A to Z', 'b.title ASC'],
     'newest' => ['Newest first', 'b.created_at DESC'],
     'rating' => ['Highest rated', 'b.rating DESC, b.title ASC'],
-    'price_asc' => ['Price, low to high', 'b.price ASC, b.title ASC'],
-    'price_desc' => ['Price, high to low', 'b.price DESC, b.title ASC'],
+    'available' => ['On the shelf now first', available_sql() . ' > 0 DESC, b.title ASC'],
 ];
 $sort = input($_GET, 'sort', 20);
 if (!isset($sorts[$sort])) {
@@ -35,13 +34,12 @@ if ($q !== '') {
 $books = db_all('SELECT ' . card_columns() . ' FROM books b WHERE ' . implode(' AND ', $where)
     . ' ORDER BY ' . $sorts[$sort][1], $params);
 
-// Members searching an exact serial number see full product details, whatever the status.
+// Members searching an exact serial number see full copy and loan details, whatever the status.
 $isSerial = (bool) preg_match('/^BNT-\d{6}$/i', $q);
 $serialBook = null;
 if ($isSerial && current_user()) {
-    $serialBook = db_one("SELECT b.*, c.name AS category, u.full_name AS added_by_name,
-                                 (SELECT COALESCE(SUM(oi.qty), 0) FROM order_items oi JOIN orders o ON o.id = oi.order_id
-                                  WHERE oi.book_id = b.id AND o.payment_status = 'paid') AS sold
+    $serialBook = db_one("SELECT b.*, " . availability_columns() . ", c.name AS category, u.full_name AS added_by_name,
+                                 (SELECT COUNT(*) FROM loans l WHERE l.book_id = b.id) AS times_borrowed
                           FROM books b JOIN categories c ON c.id = b.category_id
                           LEFT JOIN users u ON u.id = b.added_by WHERE b.serial_no = ?", [strtoupper($q)]);
 }
@@ -105,7 +103,7 @@ $n = count($books);
     </form>
   </div>
 
-  <?php if ($serialBook): [$stockText, $stockClass] = stock_label((int) $serialBook['stock']); ?>
+  <?php if ($serialBook): ?>
   <section class="serial-panel panel" aria-labelledby="serial-title">
     <?= cover_img($serialBook, 'serial-cover', false, 160) ?>
     <div>
@@ -118,9 +116,9 @@ $n = count($books);
         <div><dt>Publisher</dt><dd><?= e($serialBook['publisher'] ?? 'Not given') ?></dd></div>
         <div><dt>Format</dt><dd><?= e($serialBook['format']) ?></dd></div>
         <div><dt>Status</dt><dd><span class="pill is-<?= e($serialBook['status']) ?>"><?= e(ucfirst($serialBook['status'])) ?></span></dd></div>
-        <div><dt>Stock</dt><dd><span class="pill <?= $stockClass ?>"><?= (int) $serialBook['stock'] ?> copies · <?= e($stockText) ?></span></dd></div>
-        <div><dt>Copies sold</dt><dd><?= (int) $serialBook['sold'] ?></dd></div>
-        <div><dt>Price</dt><dd><?= money($serialBook['price']) ?></dd></div>
+        <div><dt>Availability</dt><dd><?= availability_html($serialBook) ?></dd></div>
+        <div><dt>Copies</dt><dd><?= (int) $serialBook['stock'] ?> owned · <?= (int) $serialBook['on_loan'] ?> on loan · <?= (int) $serialBook['waiting'] ?> waiting</dd></div>
+        <div><dt>Times borrowed</dt><dd><?= (int) $serialBook['times_borrowed'] ?></dd></div>
         <div><dt>Category</dt><dd><?= e($serialBook['category']) ?></dd></div>
         <div><dt>Published</dt><dd><?= e(year_label((int) $serialBook['published_year'])) ?></dd></div>
         <div><dt>Pages</dt><dd><?= (int) $serialBook['pages'] ?></dd></div>
@@ -133,7 +131,7 @@ $n = count($books);
     </div>
   </section>
   <?php elseif ($isSerial && !current_user()): ?>
-  <p class="notice"><?= icon('lock', 18) ?> Serial number lookup with stock and product details is a member feature. <a href="<?= e(url('sign-in.php?return=' . rawurlencode(current_path()))) ?>">Sign in</a> to see it.</p>
+  <p class="notice"><?= icon('lock', 18) ?> Serial number lookup with copy and loan details is a member feature. <a href="<?= e(url('sign-in.php?return=' . rawurlencode(current_path()))) ?>">Sign in</a> to see it.</p>
   <?php elseif ($isSerial): ?>
   <p class="notice">No book has the serial number <?= e(strtoupper($q)) ?>. Members can <a href="<?= e(url('add-book.php')) ?>">add it to the library</a>.</p>
   <?php endif; ?>

@@ -1,4 +1,4 @@
-// Forms: inline validation on top of HTML5 rules, tabs, delivery toggle, counters,
+// Forms: inline validation on top of HTML5 rules, tabs, counters,
 // confirm steps and the live cover preview. PHP re-checks everything on the server.
 (function () {
   'use strict';
@@ -140,28 +140,6 @@
     select(Math.max(0, start), false);
   }
 
-  // Shows the address field only for delivery, and makes it required only then.
-  function setupDelivery(form) {
-    var radios = form.querySelectorAll('input[name="delivery_method"]');
-    var block = form.querySelector('[data-address-block]');
-    var address = block ? block.querySelector('textarea, input') : null;
-    var feeRows = document.querySelectorAll('[data-delivery-only]');
-    if (!radios.length || !block) { return; }
-    function sync() {
-      var checked = form.querySelector('input[name="delivery_method"]:checked');
-      var isDelivery = !checked || checked.value === 'delivery';
-      block.hidden = !isDelivery;
-      address.required = isDelivery;
-      if (!isDelivery) { setError(address, ''); }
-      each(feeRows, function (row) { row.hidden = !isDelivery; });
-      each(document.querySelectorAll('[data-total]'), function (total) {
-        total.textContent = total.getAttribute(isDelivery ? 'data-with-delivery' : 'data-without-delivery');
-      });
-    }
-    each(radios, function (r) { r.addEventListener('change', sync); });
-    sync();
-  }
-
   // Replaces a direct destructive button with a two step "are you sure" inline confirm.
   function setupConfirm(form) {
     var trigger = form.querySelector('[data-confirm-trigger]');
@@ -251,7 +229,6 @@
 
   each(document.querySelectorAll('form[data-validate]'), setupValidation);
   each(document.querySelectorAll('[data-tabs]'), setupTabs);
-  each(document.querySelectorAll('form[data-delivery]'), setupDelivery);
   each(document.querySelectorAll('form[data-confirm]'), setupConfirm);
   each(document.querySelectorAll('textarea[maxlength][data-count]'), setupCounter);
   each(document.querySelectorAll('[data-uppercase]'), setupUppercase);

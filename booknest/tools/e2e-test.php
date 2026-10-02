@@ -2,11 +2,12 @@
 // End to end tests: drives the real site over HTTP (like a browser, with cookies and CSRF tokens)
 // and checks the database afterwards. Run with Apache and MySQL started:
 //   C:\xampp\php\php.exe tools\e2e-test.php
-// The tests change data; re-import sql/schema.sql and sql/seed.sql afterwards for a clean demo.
+// The tests change data (loans, queues, copies); re-import sql/schema.sql and sql/seed.sql afterwards for a clean demo.
 declare(strict_types=1);
 
 require __DIR__ . '/../config/config.php';
 require __DIR__ . '/../includes/db.php';
+require __DIR__ . '/../includes/loans.php';
 date_default_timezone_set(APP_TIMEZONE);
 
 const BASE = 'http://localhost/booknest/';
@@ -152,7 +153,7 @@ $aisha = new Client('aisha');
 $f = $aisha->login('aisha@localhost', 'Member123!');
 check('T17a', 'Member sign in with correct password', str_contains($f['flash'], 'Welcome back'), $f['flash']);
 $r = $aisha->get('catalogue.php?q=BNT-000123');
-check('T04', 'Member serial search shows full details', str_contains($r['body'], 'Exact serial match') && str_contains($r['body'], 'Copies sold') && str_contains($r['body'], 'Added by'), 'Details panel with stock, status, sold, added by');
+check('T04', 'Member serial search shows full details', str_contains($r['body'], 'Exact serial match') && str_contains($r['body'], 'Times borrowed') && str_contains($r['body'], 'Added by'), 'Details panel with copies, loans, times borrowed, added by');
 
 // ---- Accounts ---------------------------------------------------------------------------------
 $bad = new Client('bad');
@@ -209,45 +210,6 @@ $has = (int) db_value('SELECT COUNT(*) FROM shelf WHERE user_id = 2 AND book_id 
 $f2 = $aisha->submit('process/shelf.php', ['book_id' => '5', 'action' => 'remove']);
 $after = (int) db_value('SELECT COUNT(*) FROM shelf WHERE user_id = 2 AND book_id = 5');
 check('T38', 'Save to shelf (INSERT) then remove (DELETE)', $has === 1 && $after === 0, "after save: $has row, after remove: $after rows");
-
-// ---- Checkout ---------------------------------------------------------------------------------
-$g = new Client('guest');
-$g->submit('process/cart.php', ['action' => 'buy', 'book_id' => '13']);
-$valid = ['full_name' => 'Guest Buyer', 'email' => 'guest@localhost', 'phone' => '91234567', 'delivery_method' => 'delivery', 'address' => '12 Nanyang Drive, Singapore 637721', 'note' => '', 'simulate' => 'success'];
-$orders = (int) db_value('SELECT COUNT(*) FROM orders');
-
-$f = $g->submit('process/checkout.php', ['full_name' => ''] + $valid);
-check('T09', 'Empty name is rejected by PHP (HTML5 bypassed)', str_contains($f['page']['body'], 'Enter the name for this order') && (int) db_value('SELECT COUNT(*) FROM orders') === $orders, 'Field error shown, no order row');
-$f = $g->submit('process/checkout.php', ['address' => ''] + $valid);
-check('T10', 'Delivery without an address is rejected', str_contains($f['page']['body'], 'full delivery address'), 'Address field error shown');
-$f = $g->submit('process/checkout.php', ['phone' => '12345'] + $valid);
-check('T11', 'Invalid phone number is rejected', str_contains($f['page']['body'], 'Singapore number with 8 digits'), 'Phone field error shown');
-$f = $g->submit('process/checkout.php', ['address' => '12 Nanyang Drive'] + $valid);
-check('T10b', 'Address without a postal code is rejected', str_contains($f['page']['body'], '6 digit Singapore postal code'), 'Postal code error shown');
-
-$stock = (int) db_value('SELECT stock FROM books WHERE id = 13');
-$f = $g->submit('process/checkout.php', ['simulate' => 'failure'] + $valid);
-$last = db_one('SELECT id, payment_status FROM orders ORDER BY id DESC LIMIT 1');
-$cartKept = str_contains($f['page']['body'], 'Order summary');
-check('T12', 'Payment failure: order failed, stock and cart kept', $last['payment_status'] === 'failed' && (int) db_value('SELECT stock FROM books WHERE id = 13') === $stock && $cartKept,
-    "order #{$last['id']} {$last['payment_status']}, stock $stock unchanged, cart kept: " . ($cartKept ? 'yes' : 'no'));
-
-$m0 = $mailSize();
-$f = $g->submit('process/checkout.php', $valid);
-$last = db_one('SELECT id, payment_status, total FROM orders ORDER BY id DESC LIMIT 1');
-$newStock = (int) db_value('SELECT stock FROM books WHERE id = 13');
-$mail = substr((string) @file_get_contents($mailLog), $m0);
-check('T13', 'Payment success: paid, stock reduced, email, cart cleared', $last['payment_status'] === 'paid' && $newStock === $stock - 1 && str_contains($mail, 'guest@localhost') && str_contains($f['page']['body'], 'is confirmed'),
-    "order #{$last['id']} paid S\${$last['total']}, stock $stock -> $newStock, mail logged, confirmation page shown");
-
-$g->submit('process/cart.php', ['action' => 'add', 'book_id' => '13']);
-$f = $g->submit('process/cart.php', ['action' => 'update', 'book_id' => '13', 'qty' => '999']);
-check('T14', 'Quantity above stock is refused', str_contains($f['flash'], 'Choose a quantity from 1 to'), $f['flash']);
-
-$m0 = $mailSize();
-$g->submit('process/checkout.php', ['email' => 'someone@gmail.com'] + $valid);
-$mail = substr((string) @file_get_contents($mailLog), $m0);
-check('T28', 'Email to an external address is refused and logged', str_contains($mail, 'someone@gmail.com') && str_contains($mail, 'refused: external recipient blocked'), 'mail.log: "refused: external recipient blocked"');
 
 // ---- Study rooms --------------------------------------------------------------------------------
 [$room, $start] = free_slot($in2, 60);
@@ -318,6 +280,137 @@ check('T29', 'Cancel frees the hour; rebooking then succeeds', str_contains($f['
 $f = $u2->submit('process/cancel-room.php', ['booking_id' => (string) $bid]);
 check('T29b', 'A member cannot cancel someone else\'s booking', str_contains($f['flash'], 'could not find that booking'), $f['flash']);
 
+// ---- Borrowing, queues and late fees --------------------------------------------------------------
+// Replaces the old cart and payment checks (T09 to T14). Setup that needs a known number of copies goes
+// through the admin form, the same way staff would do it.
+$admin = new Client('admin');
+$admin->login('admin@localhost', 'Admin123!');
+$u5 = new Client('u5');
+$u5->submit('process/register.php', ['full_name' => 'Test Five', 'email' => "five$stamp@localhost", 'password' => 'Abcdefg123', 'confirm' => 'Abcdefg123', 'agree' => '1']);
+$uid = fn(string $email) => (int) db_value('SELECT id FROM users WHERE email = ?', [$email]);
+[$id1, $id2, $id3, $id4, $id5] = array_map($uid, ["one$stamp@localhost", "two$stamp@localhost", "three$stamp@localhost", "four$stamp@localhost", "five$stamp@localhost"]);
+$today = date('Y-m-d');
+$avail = fn(int $book) => (int) db_value('SELECT ' . available_sql() . " FROM books b WHERE b.id = ?", [$book]);
+$openLoans = fn(int $book) => (int) db_value("SELECT COUNT(*) FROM loans WHERE book_id = ? AND status <> 'returned'", [$book]);
+$queueStatus = fn(int $book, int $user) => (string) db_value("SELECT status FROM book_queue WHERE book_id = ? AND user_id = ? ORDER BY id DESC LIMIT 1", [$book, $user]);
+// Returns approved books nobody has on loan or in a queue, so each check starts from a known state.
+$quietBooks = fn(int $n) => array_map('intval', array_column(db_all("SELECT b.id FROM books b WHERE b.status = 'approved' AND b.stock >= 1
+    AND NOT EXISTS (SELECT 1 FROM loans l WHERE l.book_id = b.id AND l.status <> 'returned')
+    AND NOT EXISTS (SELECT 1 FROM book_queue q WHERE q.book_id = b.id AND q.status IN ('waiting','offered'))
+    ORDER BY b.id LIMIT $n"), 'id'));
+// Sets the number of copies a book owns through the admin form, and returns the flash message.
+$setCopies = fn(int $book, int $copies) => $admin->submit('process/admin-action.php', ['action' => 'update', 'id' => (string) $book,
+    'price' => (string) db_value('SELECT price FROM books WHERE id = ?', [$book]), 'stock' => (string) $copies])['flash'];
+[$bookA, $bookZ, $bookW] = $quietBooks(3);
+$setCopies($bookA, 3);
+
+$before = (int) db_value('SELECT COUNT(*) FROM loans');
+$r = $v->req('process/loan.php', ['action' => 'borrow', 'book_id' => (string) $bookA, 'collection_date' => $today]);
+check('T09', 'Visitor cannot borrow: sent to sign in, no loan', $r['code'] === 303 && str_contains($r['location'], 'sign-in.php') && (int) db_value('SELECT COUNT(*) FROM loans') === $before,
+    'Redirect to ' . basename((string) parse_url($r['location'], PHP_URL_PATH)) . ', loans still ' . $before);
+
+$f = $u1->submit('process/loan.php', ['action' => 'borrow', 'book_id' => (string) $bookA, 'collection_date' => date('Y-m-d', strtotime('+8 day'))]);
+$f2 = $u1->submit('process/loan.php', ['action' => 'borrow', 'book_id' => (string) $bookA, 'collection_date' => date('Y-m-d', strtotime('-1 day'))]);
+check('T10', 'Collection date yesterday or 8 days ahead is refused', str_contains($f['flash'], 'up to 7 days ahead') && str_contains($f2['flash'], 'up to 7 days ahead')
+    && (int) db_value('SELECT COUNT(*) FROM loans') === $before, $f['flash']);
+
+$m0 = $mailSize();
+$shelfBefore = $avail($bookA);
+$f = $u1->submit('process/loan.php', ['action' => 'borrow', 'book_id' => (string) $bookA, 'collection_date' => $today]);
+$loan = db_one("SELECT * FROM loans WHERE user_id = ? AND book_id = ? AND status <> 'returned'", [$id1, $bookA]);
+$mail = substr((string) @file_get_contents($mailLog), $m0);
+check('T11', 'Borrow an available book: loan saved, due in 14 days, emailed', $loan && $loan['status'] === 'active' && $loan['due_date'] === date('Y-m-d', strtotime('+14 day'))
+    && $avail($bookA) === $shelfBefore - 1 && str_contains($mail, 'Loan confirmed') && str_contains($f['flash'], 'Borrowed'),
+    "loan #{$loan['id']} {$loan['status']}, due {$loan['due_date']}, on the shelf $shelfBefore -> " . $avail($bookA) . ', confirmation emailed');
+
+$in3d = date('Y-m-d', strtotime('+3 day'));
+$f = $u2->submit('process/loan.php', ['action' => 'borrow', 'book_id' => (string) $bookA, 'collection_date' => $in3d]);
+$loan2 = db_one("SELECT status, due_date FROM loans WHERE user_id = ? AND book_id = ? AND status <> 'returned'", [$id2, $bookA]);
+check('T11b', 'Borrow for a later day: reserved, 14 days from collection', $loan2 && $loan2['status'] === 'reserved' && $loan2['due_date'] === date('Y-m-d', strtotime('+17 day')),
+    'status ' . ($loan2['status'] ?? 'none') . ', collect ' . $in3d . ', due ' . ($loan2['due_date'] ?? '-'));
+
+$f = $u1->submit('process/loan.php', ['action' => 'borrow', 'book_id' => (string) $bookA, 'collection_date' => $today]);
+check('T12', 'One loan per title: borrowing the same book twice is refused', str_contains($f['flash'], 'already have') && $openLoans($bookA) === 2, $f['flash']);
+
+// Book Z has exactly one copy: member 1 takes it, members 2 and 3 queue for it.
+$flash = $setCopies($bookZ, 1);
+$u1->submit('process/loan.php', ['action' => 'borrow', 'book_id' => (string) $bookZ, 'collection_date' => $today]);
+$f = $u2->submit('process/loan.php', ['action' => 'borrow', 'book_id' => (string) $bookZ, 'collection_date' => $today]);
+$f2 = $u2->submit('process/loan.php', ['action' => 'queue', 'book_id' => (string) $bookZ]);
+$f3 = $u3->submit('process/loan.php', ['action' => 'queue', 'book_id' => (string) $bookZ]);
+$page = $u3->get('book.php?id=' . $bookZ)['body'];
+check('T13', 'No copy left: borrowing refused, members join the queue in order', str_contains($f['flash'], 'Every copy') && str_contains($f2['flash'], '#1 in line')
+    && str_contains($f3['flash'], '#2 in line') && str_contains($page, 'You are #2 in line') && $queueStatus($bookZ, $id2) === 'waiting',
+    $f2['flash'] . ' || ' . $f3['flash']);
+$f = $u3->submit('process/loan.php', ['action' => 'queue', 'book_id' => (string) $bookZ]);
+check('T13b', 'Joining the same queue twice is refused', str_contains($f['flash'], 'already in the queue'), $f['flash']);
+$page = $v->get('book.php?id=' . $bookZ)['body'];
+check('T13c', 'Everyone else sees the due date and the queue length', str_contains($page, 'Borrowed until') && str_contains($page, '2 people waiting'), 'Book page: "Borrowed until ..." and "2 people waiting"');
+
+// Member 1 returns it: member 2 (first in line) is offered the copy and emailed; member 3 must wait.
+$m0 = $mailSize();
+$zLoan = (int) db_value("SELECT id FROM loans WHERE user_id = ? AND book_id = ? AND status <> 'returned'", [$id1, $bookZ]);
+$f = $u1->submit('process/loan.php', ['action' => 'return', 'loan_id' => (string) $zLoan]);
+$mail = substr((string) @file_get_contents($mailLog), $m0);
+$f3 = $u3->submit('process/loan.php', ['action' => 'borrow', 'book_id' => (string) $bookZ, 'collection_date' => $today]);
+$f2 = $u2->submit('process/loan.php', ['action' => 'borrow', 'book_id' => (string) $bookZ, 'collection_date' => $today]);
+check('T14', 'Return offers the copy to the next in line, who can then borrow it', str_contains($f['flash'], 'Returned') && str_contains($mail, "two$stamp@localhost")
+    && str_contains($mail, 'Your reserved book is ready') && str_contains($f3['flash'], '#1 in the queue') && str_contains($f2['flash'], 'Borrowed')
+    && $queueStatus($bookZ, $id2) === 'borrowed' && $queueStatus($bookZ, $id3) === 'waiting',
+    'Member 2 offered and emailed, member 3 refused while waiting, member 2 borrowed the held copy');
+
+// Hold window: member 4 queues behind member 3; member 2 returns; member 3's hold runs out after QUEUE_HOLD_DAYS.
+$f = $u4->submit('process/loan.php', ['action' => 'queue', 'book_id' => (string) $bookZ]);
+$z2 = (int) db_value("SELECT id FROM loans WHERE user_id = ? AND book_id = ? AND status <> 'returned'", [$id2, $bookZ]);
+$u2->submit('process/loan.php', ['action' => 'return', 'loan_id' => (string) $z2]);
+$offeredTo3 = $queueStatus($bookZ, $id3) === 'offered';
+db_exec("UPDATE book_queue SET offered_at = NOW() - INTERVAL 3 DAY WHERE book_id = ? AND user_id = ? AND status = 'offered'", [$bookZ, $id3]);
+$m0 = $mailSize();
+$v->get('index.php');
+$mail = substr((string) @file_get_contents($mailLog), $m0);
+check('T63', 'An unclaimed hold expires after 2 days and passes to the next', $offeredTo3 && $queueStatus($bookZ, $id3) === 'expired' && $queueStatus($bookZ, $id4) === 'offered'
+    && str_contains($mail, 'has ended') && str_contains($mail, "four$stamp@localhost"), 'member 3 offered -> expired, member 4 offered and emailed');
+
+// Admin adds a copy: it goes straight to the person waiting.
+$u1->submit('process/loan.php', ['action' => 'queue', 'book_id' => (string) $bookZ]);
+$flash = $setCopies($bookZ, 2);
+check('T64', 'Admin adding a copy offers it to the queue at once', $queueStatus($bookZ, $id1) === 'offered' && str_contains($flash, 'offered to the queue'), $flash);
+$flash = $setCopies($bookZ, 1);
+check('T65', 'Admin cannot own fewer copies than are out or held', str_contains($flash, 'must keep at least') && (int) db_value('SELECT stock FROM books WHERE id = ?', [$bookZ]) === 2, $flash);
+
+// Late fee: move member 1's loan of book A so it was due 5 days ago.
+$aLoan = (int) db_value("SELECT id FROM loans WHERE user_id = ? AND book_id = ? AND status <> 'returned'", [$id1, $bookA]);
+db_exec('UPDATE loans SET collection_date = CURDATE() - INTERVAL 19 DAY, due_date = CURDATE() - INTERVAL 5 DAY WHERE id = ?', [$aLoan]);
+$page = $u1->get('account.php')['body'];
+$fee = (float) db_value('SELECT ' . loan_fee_sql() . ' FROM loans l WHERE l.id = ?', [$aLoan]);
+check('T60', 'Late fee at 5 days overdue is 5 x S$0.50 = S$2.50, shown live', $fee === 2.5 && str_contains($page, '5 days overdue, S$2.50 owed so far'), 'My Account: "5 days overdue, S$2.50 owed so far"');
+
+$f = $u1->submit('process/loan.php', ['action' => 'return', 'loan_id' => (string) $aLoan]);
+// Two more days pass after the return: shift every date of the loan back by two days.
+db_exec('UPDATE loans SET collection_date = collection_date - INTERVAL 2 DAY, due_date = due_date - INTERVAL 2 DAY, returned_date = returned_date - INTERVAL 2 DAY WHERE id = ?', [$aLoan]);
+$after = (float) db_value('SELECT ' . loan_fee_sql() . ' FROM loans l WHERE l.id = ?', [$aLoan]);
+check('T61', 'Returning stops the fee: still S$2.50 two days later', str_contains($f['flash'], 'late fee of S$2.50') && $after === 2.5, $f['flash'] . ' Two days on: S$' . number_format($after, 2));
+
+// Two members race for the last copy of book W at the same moment.
+$setCopies($bookW, 1);
+$mh = curl_multi_init();
+foreach ([$u3, $u5] as $cl) {
+    curl_multi_add_handle($mh, $cl->handle('process/loan.php', ['csrf' => $cl->csrf(), 'action' => 'borrow', 'book_id' => (string) $bookW, 'collection_date' => $today]));
+}
+do {
+    curl_multi_exec($mh, $running);
+    curl_multi_select($mh);
+} while ($running);
+check('T62', 'Two members, last copy, simultaneous: only one gets it', $openLoans($bookW) === 1, $openLoans($bookW) . ' open loan for a book with 1 copy');
+
+$ext = new Client('external');
+$ext->submit('process/register.php', ['full_name' => 'Outside Reader', 'email' => "reader$stamp@gmail.com", 'password' => 'Abcdefg123', 'confirm' => 'Abcdefg123', 'agree' => '1']);
+$m0 = $mailSize();
+$f = $ext->submit('process/loan.php', ['action' => 'borrow', 'book_id' => (string) $bookA, 'collection_date' => $today]);
+$mail = substr((string) @file_get_contents($mailLog), $m0);
+check('T28', 'Email to an external address is refused and logged', str_contains($f['flash'], 'Borrowed') && str_contains($mail, "reader$stamp@gmail.com") && str_contains($mail, 'refused: external recipient blocked'),
+    'Loan saved; mail.log: "refused: external recipient blocked"');
+
 // ---- Add book and approval ----------------------------------------------------------------------
 $serial = sprintf('BNT-%06d', 900000 + (int) date('is'));
 $book = ['serial_no' => $serial, 'title' => 'The Test of Time', 'author' => 'Ada Tester', 'category_id' => '1', 'price' => '12.50',
@@ -331,18 +424,17 @@ check('T34', 'Duplicate serial number is rejected', str_contains($f['page']['bod
 $f = $aisha->submit('process/add-book.php', ['serial_no' => 'ABC-12'] + $book);
 check('T34b', 'Badly formatted serial number is rejected', str_contains($f['page']['body'], 'BNT- followed by six digits'), 'Format error shown');
 
-$admin = new Client('admin');
-$admin->login('admin@localhost', 'Admin123!');
 $f = $admin->submit('process/admin-action.php', ['action' => 'approve', 'id' => (string) $row['id']]);
 $inCatalogue = str_contains($v->get('catalogue.php?q=Test+of+Time')['body'], 'The Test of Time');
 check('T36', 'Admin approval puts the book in the catalogue', $inCatalogue, $f['flash']);
 
 $r = $admin->get('admin.php');
-$rev = (float) db_value("SELECT SUM(total) FROM orders WHERE payment_status = 'paid'");
-check('T37', 'Dashboard revenue matches a manual SUM query', str_contains($r['body'], 'S$' . number_format($rev, 2)), 'Manual SQL: S$' . number_format($rev, 2) . ' shown on dashboard');
+$owed = (float) db_value('SELECT SUM(GREATEST(0, DATEDIFF(COALESCE(returned_date, CURDATE()), due_date)) * 0.50) FROM loans WHERE fee_cleared_at IS NULL');
+check('T37', 'Dashboard fees outstanding match a manual SUM query', str_contains($r['body'], 'Late fees outstanding</p><p class="tile-value">S$' . number_format($owed, 2)),
+    'Manual SQL: S$' . number_format($owed, 2) . ' shown on dashboard');
 
-$f = $admin->submit('process/admin-action.php', ['action' => 'delete', 'id' => '13']);
-check('T39b', 'A book with orders cannot be deleted', str_contains($f['flash'], 'kept for the sales records') && db_value('SELECT 1 FROM books WHERE id = 13'), $f['flash']);
+$f = $admin->submit('process/admin-action.php', ['action' => 'delete', 'id' => (string) $bookA]);
+check('T39b', 'A book that has been borrowed cannot be deleted', str_contains($f['flash'], 'kept for the loan records') && db_value('SELECT 1 FROM books WHERE id = ?', [$bookA]), $f['flash']);
 
 // ---- Paige, the help assistant ---------------------------------------------------------------------
 $p = new Client('paige');
@@ -350,15 +442,15 @@ $logged = (int) db_value('SELECT COUNT(*) FROM assistant_log');
 $f = $p->submit('process/assistant.php', ['message' => 'What time do you close?']);
 check('T52', 'Assistant answers opening hours on the page', str_contains($f['page']['body'], 'We are open every day, 10:00 to 21:00')
     && str_contains($f['page']['body'], '<details class="assistant" id="assistant" open'), 'Reply shown in the open chat panel');
-$f = $p->submit('process/assistant.php', ['quick' => 'Delivery fees']);
-check('T53', 'Assistant quick question button works', str_contains($f['page']['body'], 'Delivery within Singapore costs'), 'Delivery answer shown; earlier messages kept: '
+$f = $p->submit('process/assistant.php', ['quick' => 'Late fees']);
+check('T53', 'Assistant quick question button works', str_contains($f['page']['body'], 'Returning late costs S$0.50'), 'Late fee answer shown; earlier messages kept: '
     . (str_contains($f['page']['body'], 'What time do you close?') ? 'yes' : 'no'));
-$privateOrder = (int) db_value('SELECT id FROM orders WHERE user_id IS NOT NULL ORDER BY id LIMIT 1');
-$f = $p->submit('process/assistant.php', ['message' => "where is order $privateOrder"]);
-check('T54', 'Assistant will not show an order to a stranger', str_contains($f['page']['body'], 'only show an order to the person who placed it')
-    && !str_contains($f['page']['body'], "Order #$privateOrder was placed"), 'Refused politely, no order details shown');
-$f = $aisha->submit('process/assistant.php', ['message' => 'where is my order']);
-check('T55', 'Assistant shows a member their own latest order', (bool) preg_match('/Order #\d+ was placed on/', $f['page']['body']), 'Order summary shown to its owner');
+$f = $p->submit('process/assistant.php', ['message' => 'what do I have on loan']);
+check('T54', 'Assistant will not show loans to a visitor', str_contains($f['page']['body'], 'only show loans to the member they belong to')
+    && !str_contains($f['page']['body'], 'books on loan:'), 'Asked to sign in, no loan details shown');
+$f = $aisha->submit('process/assistant.php', ['message' => 'what do I have on loan']);
+check('T55', 'Assistant shows a member their own loans', str_contains($f['page']['body'], 'Atomic Habits, due back') && str_contains($f['page']['body'], 'days overdue'),
+    'Aisha sees her two loans with due date and overdue fee');
 $f = $p->submit('process/assistant.php', ['message' => '<script>alert(1)</script> can I bring my dog']);
 check('T56', 'Assistant escapes input and logs what it cannot answer', !str_contains($f['page']['body'], '<script>alert(1)</script>')
     && (int) db_value("SELECT COUNT(*) FROM assistant_log WHERE answered = 0 AND question LIKE '%bring my dog%'") === 1, 'Script shown as text; question logged as unanswered');

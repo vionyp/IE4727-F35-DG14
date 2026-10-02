@@ -45,13 +45,13 @@ require __DIR__ . '/includes/header.php';
     <form class="lookup-form" action="<?= e(url('add-book.php')) ?>" method="get">
       <div class="field">
         <label for="lookup-serial">Serial number</label>
-        <input type="text" id="lookup-serial" name="serial" required maxlength="10" pattern="[Mm][Rr][Gg]-\d{6}" placeholder="BNT-000123" value="<?= e($lookup) ?>" data-uppercase autocomplete="off"<?= $lookupError ? ' aria-describedby="lookup-msg"' : '' ?>>
+        <input type="text" id="lookup-serial" name="serial" required maxlength="10" pattern="[Bb][Nn][Tt]-\d{6}" placeholder="BNT-000123" value="<?= e($lookup) ?>" data-uppercase autocomplete="off"<?= $lookupError ? ' aria-describedby="lookup-msg"' : '' ?>>
       </div>
       <button class="btn btn-secondary" type="submit"><?= icon('search', 18) ?> Look up</button>
     </form>
     <?php if ($lookupError): ?>
     <p class="notice" id="lookup-msg" role="status"><?= e($lookupError) ?></p>
-    <?php elseif ($found): [$stockText, $stockClass] = stock_label((int) $found['stock']); ?>
+    <?php elseif ($found): $counts = book_counts((int) $found['id']); ?>
     <div class="serial-panel" role="status">
       <?= cover_img($found, 'serial-cover', false, 120) ?>
       <div>
@@ -62,8 +62,7 @@ require __DIR__ . '/includes/header.php';
           <div><dt>ISBN</dt><dd><?= e($found['isbn'] ?? 'None') ?></dd></div>
           <div><dt>Publisher</dt><dd><?= e($found['publisher'] ?? 'Not given') ?></dd></div>
           <div><dt>Status</dt><dd><span class="pill is-<?= e($found['status']) ?>"><?= e(ucfirst($found['status'])) ?></span></dd></div>
-          <div><dt>Stock</dt><dd><span class="pill <?= $stockClass ?>"><?= (int) $found['stock'] ?> · <?= e($stockText) ?></span></dd></div>
-          <div><dt>Price</dt><dd><?= money($found['price']) ?></dd></div>
+          <div><dt>Copies</dt><dd><?= (int) $found['stock'] ?> owned · <?= $counts['on_loan'] ?> on loan · <?= $counts['available'] ?> on the shelf</dd></div>
           <div><dt>Published</dt><dd><?= e(year_label((int) $found['published_year'])) ?></dd></div>
           <div><dt>Pages</dt><dd><?= (int) $found['pages'] ?></dd></div>
           <div><dt>Added by</dt><dd><?= e($found['added_by_name'] ?? 'Library staff') ?></dd></div>
@@ -107,12 +106,7 @@ require __DIR__ . '/includes/header.php';
           <?= field_error_html('addbook', 'author') ?>
         </div>
         <div class="field">
-          <label for="ab-price">Price (S$)</label>
-          <input type="number" id="ab-price" name="price" required min="0.5" max="500" step="0.01" inputmode="decimal" value="<?= e(old('addbook', 'price')) ?>"<?= field_attrs('addbook', 'price') ?>>
-          <?= field_error_html('addbook', 'price') ?>
-        </div>
-        <div class="field">
-          <label for="ab-stock">Copies available</label>
+          <label for="ab-stock">Copies you can give the library</label>
           <input type="number" id="ab-stock" name="stock" required min="0" max="999" step="1" value="<?= e(old('addbook', 'stock', '1')) ?>"<?= field_attrs('addbook', 'stock') ?>>
           <?= field_error_html('addbook', 'stock') ?>
         </div>

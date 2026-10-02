@@ -9,9 +9,9 @@ Nadia heard about *Frankenstein* in a lecture and wants to see if she would enjo
 ```mermaid
 flowchart LR
     A["Any page<br/>types 'franken' in header search"] -->|"Enter (1)"| B["catalogue.php?q=franken<br/>1 result"]
-    B -->|"tap cover (2)"| C["book.php<br/>synopsis, price, stock"]
+    B -->|"tap cover (2)"| C["book.php<br/>synopsis, availability"]
     C -->|"Read a sample (3)"| D["read.php<br/>swipes through 10 pages"]
-    D -->|"Buy now on last page"| E["checkout.php"]
+    D -->|"Borrow this book on last page"| E["borrow.php"]
 ```
 
 | Step | Screen | What she sees | Click |
@@ -20,23 +20,33 @@ flowchart LR
 | 2 | Catalogue | "1 book matches franken", one cover card | 2 |
 | 3 | Book detail | Cover, synopsis, "Read a sample" as a clear secondary button | 3 |
 | 4 | Reader | A single paper page; she swipes left to turn | swipe |
-| 5 | End of sample | "Enjoying it?" with Buy now and Back to book | optional |
+| 5 | End of sample | "Enjoying it?" with Borrow this book and Back to book | optional |
 
 From the home page she can also tap the billboard or a row card directly, which cuts it to 2 clicks.
 
-### Scenario 2: Buy a book as a guest (Mr Tan, 52, on a laptop)
+### Scenario 2: Borrow a book (Mr Tan, 52, member, on a laptop)
 
 ```mermaid
 flowchart LR
-    A["Home<br/>New arrivals row"] -->|"click cover (1)"| B["book.php"]
-    B -->|"Buy now (2)"| C["checkout.php<br/>book in cart, form"]
-    C -->|"types details, Place order (3)"| D{"Payment"}
-    D -->|success| E["checkout.php?done=<br/>confirmation banner, email"]
-    D -->|failure| F["checkout.php<br/>cart kept, retry message"]
+    A["Home<br/>New arrivals row"] -->|"click cover (1)"| B["book.php<br/>Available to borrow"]
+    B -->|"Borrow (2)"| C["borrow.php<br/>collection date, today chosen"]
+    C -->|"Confirm loan (3)"| D{"Server checks<br/>copy free, one per title, date window"}
+    D -->|ok| E["account.php#loans<br/>Due back in 14 days, email"]
+    D -->|"refused"| F["borrow.php<br/>specific reason"]
+    B -->|"no copy on the shelf"| G["Join the queue (2)<br/>You are #3 in line"]
 ```
 
-No account is needed. Buy now puts the book in the cart and opens checkout in one step.
-The payment simulator defaults to Success, so the normal path has no extra click.
+Borrowing is free, so there is no payment step. The collection date defaults to today, which
+keeps the normal path at three clicks. A visitor who presses "Sign in to borrow" is returned to
+the same borrow form after signing in. When every copy is out, the Borrow button becomes
+"Join the queue", one click; when a copy is returned the first person in line gets an email
+and the copy is held for them for two days.
+
+### Scenario 2b: Return a book (Mr Tan, two weeks later)
+
+My Account (1), Return (2), Yes, return it (3). If the book is late, the confirmation states the
+fee ("It was 3 days late, so a late fee of S$1.50 was added to your account"), and the fee stops
+growing from that day.
 
 ### Scenario 3: Book a study room (Aisha, member)
 
@@ -67,7 +77,9 @@ Counted for a signed in member starting on any page unless noted.
 | 1 | Find a book by title | Search, Enter (1), result (2) | 2 | T39 |
 | 2 | Browse a category | Category chip or row title (1), book (2) | 2 | T39 |
 | 3 | Read a sample | Cover (1), Read a sample (2) | 2 | T39 |
-| 4 | Buy one book (guest) | Cover (1), Buy now (2), Place order (3) | 3 | T39 |
+| 4 | Borrow one book (member) | Cover (1), Borrow (2), Confirm loan (3) | 3 | T39 |
+| 4b | Join a queue for a book with no copy left | Cover (1), Join the queue (2) | 2 | T39 |
+| 4c | Return a book | My Account (1), Return (2), Yes, return it (3) | 3 | T39 |
 | 5 | Book a study room | Study Rooms (1), Free cell (2), Confirm (3) | 3 | T39 |
 | 6 | Cancel a booking | My Account (1), Cancel (2), Yes, cancel (3) | 3 | T39 |
 | 7 | Save a book to My Shelf | Cover (1), Save to shelf (2) | 2 | T39 |
@@ -79,7 +91,7 @@ Counted for a signed in member starting on any page unless noted.
 Design decisions that keep these numbers low:
 
 - **Search in the header of every page**, so finding starts anywhere.
-- **Buy now** adds and opens checkout in one step; **guest checkout** means no sign in detour.
+- **Borrow** opens a one field form with today already chosen; **Join the queue** is a single button on the book page.
 - **Free cells are links** that pre-fill the form; duration defaults to 60 minutes.
 - **Account links are plain links**, not a dropdown menu that costs a click to open.
 - **Opening hours live in the footer**, not on a separate page.

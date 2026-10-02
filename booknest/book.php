@@ -1,9 +1,9 @@
 <?php
-// Book detail: cover, facts, synopsis, buying and shelf actions, and similar books.
+// Book detail: cover, facts, synopsis, availability with borrow or queue actions, shelf, and similar books.
 require __DIR__ . '/includes/bootstrap.php';
 
 $id = input_int($_GET, 'id');
-$book = $id ? db_one("SELECT b.*, c.name AS category, c.slug AS category_slug FROM books b
+$book = $id ? db_one("SELECT b.*, " . availability_columns() . ", c.name AS category, c.slug AS category_slug FROM books b
                       JOIN categories c ON c.id = b.category_id WHERE b.id = ? AND b.status = 'approved'", [$id]) : null;
 
 if (!$book) {
@@ -21,8 +21,9 @@ if (!$book) {
 remember_recent((int) $book['id']);
 $user = current_user();
 $onShelf = $user && db_value('SELECT 1 FROM shelf WHERE user_id = ? AND book_id = ?', [$user['id'], $book['id']]);
-$inCart = cart()[$book['id']] ?? 0;
-[$stockText, $stockClass] = stock_label((int) $book['stock']);
+$loan = my_loans()[$book['id']] ?? null;
+$entry = my_queue()[$book['id']] ?? null;
+$available = max(0, (int) $book['stock'] - (int) $book['on_loan'] - (int) $book['held']);
 $pagesInSample = $book['sample_text'] ? substr_count($book['sample_text'], '---PAGE---') + 1 : 0;
 $similar = db_all('SELECT ' . card_columns() . " FROM books b WHERE b.status = 'approved' AND b.category_id = ? AND b.id <> ?
                    ORDER BY b.rating DESC LIMIT 8", [$book['category_id'], $book['id']]);
@@ -46,19 +47,33 @@ require __DIR__ . '/includes/header.php';
     <p class="book-author">by <?= e($book['author']) ?></p>
     <p class="book-facts"><?= rating_html($book['rating']) ?><span><?= e(year_label((int) $book['published_year'])) ?></span><span><?= e($book['format']) ?></span><span><?= (int) $book['pages'] ?> pages</span></p>
 
-    <div class="buy-box">
-      <p class="price"><?= money($book['price']) ?></p>
-      <span class="pill <?= $stockClass ?>"><?= e($stockText) ?></span>
-      <?php if ($inCart): ?><span class="pill"><?= icon('cart', 14) ?> <?= (int) $inCart ?> in your cart</span><?php endif; ?>
+    <div class="avail-box">
+      <p class="avail-line avail-lg"><?= availability_html($book) ?></p>
+      <p class="small muted"><?= $available ?> of <?= (int) $book['stock'] ?> <?= (int) $book['stock'] === 1 ? 'copy' : 'copies' ?> on the shelf · <?= LOAN_DAYS ?> day loans, free for members</p>
     </div>
 
     <div class="book-actions">
-      <form action="<?= e(url('process/cart.php')) ?>" method="post">
+      <?php if (!$user): ?>
+      <a class="btn btn-primary" href="<?= e(url('sign-in.php?return=' . rawurlencode(url('borrow.php?id=' . $book['id'])))) ?>"><?= icon('books', 18) ?> Sign in to borrow</a>
+      <?php elseif ($loan): ?>
+      <a class="btn btn-primary" href="<?= e(url('account.php#loans')) ?>"><?= icon('books', 18) ?> See your loan</a>
+      <?php elseif ($entry && $entry['status'] === 'offered'): ?>
+      <a class="btn btn-primary" href="<?= e(url('borrow.php?id=' . $book['id'])) ?>"><?= icon('books', 18) ?> Borrow your held copy</a>
+      <?php elseif ($entry): ?>
+      <form action="<?= e(url('process/loan.php')) ?>" method="post">
         <?= csrf_field() ?>
         <input type="hidden" name="book_id" value="<?= (int) $book['id'] ?>">
-        <button class="btn btn-primary" type="submit" name="action" value="buy"<?= $book['stock'] > 0 ? '' : ' disabled' ?>>Buy now</button>
-        <button class="btn btn-secondary" type="submit" name="action" value="add"<?= $book['stock'] > 0 ? '' : ' disabled' ?>><?= icon('cart', 18) ?> Add to cart</button>
+        <button class="btn btn-secondary" type="submit" name="action" value="leave">Leave the queue</button>
       </form>
+      <?php elseif ($available > 0): ?>
+      <a class="btn btn-primary" href="<?= e(url('borrow.php?id=' . $book['id'])) ?>"><?= icon('books', 18) ?> Borrow</a>
+      <?php elseif ((int) $book['stock'] > 0): ?>
+      <form action="<?= e(url('process/loan.php')) ?>" method="post">
+        <?= csrf_field() ?>
+        <input type="hidden" name="book_id" value="<?= (int) $book['id'] ?>">
+        <button class="btn btn-primary" type="submit" name="action" value="queue"><?= icon('queue', 18) ?> Join the queue</button>
+      </form>
+      <?php endif; ?>
       <?php if ($pagesInSample): ?>
       <a class="btn btn-ghost" href="<?= e(url('read.php?id=' . $book['id'])) ?>"><?= icon('book', 18) ?> Read a <?= sample_word($book) ?></a>
       <?php endif; ?>
@@ -73,8 +88,12 @@ require __DIR__ . '/includes/header.php';
       <a class="btn btn-ghost" href="<?= e(url('sign-in.php?return=' . rawurlencode(current_path()))) ?>"><?= icon('bookmark', 18) ?> Sign in to save</a>
       <?php endif; ?>
     </div>
-    <?php if ($book['stock'] <= 0): ?>
-    <p class="notice">This edition is out of stock. You can still read the <?= sample_word($book) ?>, and save it to your shelf for later.</p>
+    <?php if ($entry && $entry['status'] === 'waiting'): ?>
+    <p class="notice"><?= icon('queue', 18) ?> We will email you as soon as a copy is yours, then hold it for <?= QUEUE_HOLD_DAYS ?> days. Meanwhile you can read the <?= sample_word($book) ?>.</p>
+    <?php elseif (!$loan && !$entry && $available <= 0 && (int) $book['stock'] > 0): ?>
+    <p class="notice">Every copy is out. Join the queue and we will email you when one comes back. You can still read the <?= sample_word($book) ?> now.</p>
+    <?php elseif ((int) $book['stock'] <= 0): ?>
+    <p class="notice">We have no copies of this book yet. You can still read the <?= sample_word($book) ?>, and save it to your shelf for later.</p>
     <?php endif; ?>
 
     <section class="synopsis" aria-labelledby="synopsis-title">
@@ -94,7 +113,9 @@ require __DIR__ . '/includes/header.php';
         <div><dt>First published</dt><dd><?= e(year_label((int) $book['published_year'])) ?></dd></div>
         <div><dt>Length</dt><dd><?= (int) $book['pages'] ?> pages</dd></div>
         <div><dt><?= sample_word($book) === 'preview' ? 'BookNest preview' : 'Free sample' ?></dt><dd><?= $pagesInSample ? $pagesInSample . ' pages' . (sample_word($book) === 'preview' ? ', written by us' : ' from the book') : 'Not available' ?></dd></div>
-        <div><dt>Delivery</dt><dd>Free over <?= money(FREE_DELIVERY_FROM) ?>, or collect at the library</dd></div>
+        <div><dt>Copies</dt><dd><?= (int) $book['stock'] ?> owned by the library</dd></div>
+        <div><dt>Loan period</dt><dd><?= LOAN_DAYS ?> days, collected at the front desk</dd></div>
+        <div><dt>Late returns</dt><dd><?= money(LATE_FEE_PER_DAY) ?> a day after the due date</dd></div>
       </dl>
     </section>
   </div>

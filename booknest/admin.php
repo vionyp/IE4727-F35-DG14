@@ -3,33 +3,39 @@
 require __DIR__ . '/includes/bootstrap.php';
 require_admin();
 
-// Headline numbers.
+// Headline numbers. Overdue counts and fees are worked out from today's date, never from stored values.
+$fee = loan_fee_sql();
 $kpi = db_one("SELECT
-    COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total END), 0) AS revenue,
-    SUM(payment_status = 'paid') AS paid_orders,
-    COALESCE(AVG(CASE WHEN payment_status = 'paid' THEN total END), 0) AS avg_order,
-    SUM(payment_status = 'failed') AS failed_orders
-  FROM orders");
-$attempts = (int) $kpi['paid_orders'] + (int) $kpi['failed_orders'];
-$successRate = $attempts ? round($kpi['paid_orders'] / $attempts * 100) : 0;
+    SUM(l.status <> 'returned') AS on_loan,
+    SUM(l.status <> 'returned' AND l.due_date < CURDATE()) AS overdue,
+    SUM(l.status = 'reserved') AS reserved,
+    SUM(l.created_at >= NOW() - INTERVAL 30 DAY) AS loans_30,
+    COALESCE(SUM(CASE WHEN l.fee_cleared_at IS NULL THEN $fee END), 0) AS fees_owed
+  FROM loans l");
+$waitingTotal = (int) db_value("SELECT COUNT(*) FROM book_queue WHERE status IN ('waiting','offered')");
 $members = (int) db_value("SELECT COUNT(*) FROM users WHERE role = 'member'");
 $newMembers = (int) db_value("SELECT COUNT(*) FROM users WHERE role = 'member' AND created_at >= NOW() - INTERVAL 30 DAY");
 
-// Revenue by category.
-$byCategory = db_all("SELECT c.name, SUM(oi.qty * oi.unit_price) AS revenue, SUM(oi.qty) AS units
-                      FROM order_items oi JOIN orders o ON o.id = oi.order_id AND o.payment_status = 'paid'
-                      JOIN books b ON b.id = oi.book_id JOIN categories c ON c.id = b.category_id
-                      GROUP BY c.id, c.name ORDER BY revenue DESC");
-// Top five books by copies sold.
-$topBooks = db_all("SELECT b.title, SUM(oi.qty) AS units, SUM(oi.qty * oi.unit_price) AS revenue
-                    FROM order_items oi JOIN orders o ON o.id = oi.order_id AND o.payment_status = 'paid'
-                    JOIN books b ON b.id = oi.book_id
-                    GROUP BY b.id, b.title ORDER BY units DESC, revenue DESC LIMIT 5");
-// Paid orders per day over the last 14 days (missing days filled with zero).
-$perDayRows = db_all("SELECT DATE(created_at) AS day, COUNT(*) AS orders FROM orders
-                      WHERE payment_status = 'paid' AND created_at >= CURDATE() - INTERVAL 13 DAY
-                      GROUP BY DATE(created_at)");
-$perDayMap = array_column($perDayRows, 'orders', 'day');
+// Loans by category, all time.
+$byCategory = db_all("SELECT c.name, COUNT(l.id) AS loans
+                      FROM loans l JOIN books b ON b.id = l.book_id JOIN categories c ON c.id = b.category_id
+                      GROUP BY c.id, c.name ORDER BY loans DESC");
+// Top five most borrowed books.
+$topBooks = db_all("SELECT b.title, COUNT(l.id) AS loans
+                    FROM loans l JOIN books b ON b.id = l.book_id
+                    GROUP BY b.id, b.title ORDER BY loans DESC, b.title LIMIT 5");
+// Current queue lengths, longest first.
+$queues = db_all("SELECT b.title, COUNT(q.id) AS waiting
+                  FROM book_queue q JOIN books b ON b.id = q.book_id
+                  WHERE q.status IN ('waiting','offered') GROUP BY b.id, b.title ORDER BY waiting DESC, b.title LIMIT 6");
+// Overdue loans with the fee owed so far, worst first.
+$overdue = db_all("SELECT l.id, l.due_date, b.title, u.full_name, u.email, DATEDIFF(CURDATE(), l.due_date) AS days_late, $fee AS fee
+                   FROM loans l JOIN books b ON b.id = l.book_id JOIN users u ON u.id = l.user_id
+                   WHERE l.status <> 'returned' AND l.due_date < CURDATE() ORDER BY l.due_date, l.id LIMIT 10");
+// New loans per day over the last 14 days (missing days filled with zero).
+$perDayRows = db_all("SELECT DATE(created_at) AS day, COUNT(*) AS loans FROM loans
+                      WHERE created_at >= CURDATE() - INTERVAL 13 DAY GROUP BY DATE(created_at)");
+$perDayMap = array_column($perDayRows, 'loans', 'day');
 $perDay = [];
 for ($i = 13; $i >= 0; $i--) {
     $d = date('Y-m-d', strtotime("-$i day", strtotime('today')));
@@ -54,7 +60,8 @@ $pending = db_all("SELECT b.*, c.name AS category, u.full_name AS added_by_name 
                    JOIN categories c ON c.id = b.category_id LEFT JOIN users u ON u.id = b.added_by
                    WHERE b.status = 'pending' ORDER BY b.created_at");
 $books = db_all("SELECT b.id, b.serial_no, b.title, b.author, b.price, b.stock, b.is_featured, b.is_staff_pick, c.name AS category,
-                        (SELECT COUNT(*) FROM order_items oi WHERE oi.book_id = b.id) AS times_ordered
+                        (SELECT COUNT(*) FROM loans l WHERE l.book_id = b.id) AS times_borrowed,
+                        (SELECT COUNT(*) FROM loans l WHERE l.book_id = b.id AND l.status <> 'returned') AS on_loan
                  FROM books b JOIN categories c ON c.id = b.category_id WHERE b.status = 'approved' ORDER BY b.title");
 $rooms = db_all('SELECT * FROM study_rooms ORDER BY id');
 
@@ -83,25 +90,44 @@ $maxDay = max($perDay) ?: 1;
   <header class="page-head">
     <p class="eyebrow">Staff only</p>
     <h1>Library dashboard</h1>
-    <p class="lede">Sales, study room use and everything waiting for a decision.</p>
+    <p class="lede">Loans, late fees, queues, study room use and everything waiting for a decision.</p>
   </header>
 
   <div class="tiles">
-    <div class="tile"><p class="tile-label">Revenue (paid orders)</p><p class="tile-value"><?= money($kpi['revenue']) ?></p></div>
-    <div class="tile"><p class="tile-label">Paid orders</p><p class="tile-value"><?= (int) $kpi['paid_orders'] ?></p><p class="tile-note"><?= (int) $kpi['failed_orders'] ?> payments failed</p></div>
-    <div class="tile"><p class="tile-label">Average order</p><p class="tile-value"><?= money($kpi['avg_order']) ?></p></div>
-    <div class="tile"><p class="tile-label">Payment success</p><p class="tile-value"><?= $successRate ?>%</p></div>
+    <div class="tile"><p class="tile-label">Books on loan</p><p class="tile-value"><?= (int) $kpi['on_loan'] ?></p><p class="tile-note"><?= (int) $kpi['reserved'] ?> waiting to be collected</p></div>
+    <div class="tile<?= (int) $kpi['overdue'] ? ' tile-alert' : '' ?>"><p class="tile-label">Overdue loans</p><p class="tile-value"><?= (int) $kpi['overdue'] ?></p></div>
+    <div class="tile"><p class="tile-label">Late fees outstanding</p><p class="tile-value"><?= money($kpi['fees_owed']) ?></p><p class="tile-note">across all members</p></div>
+    <div class="tile"><p class="tile-label">People in queues</p><p class="tile-value"><?= $waitingTotal ?></p><p class="tile-note"><?= (int) $kpi['loans_30'] ?> loans in 30 days</p></div>
     <div class="tile"><p class="tile-label">Members</p><p class="tile-value"><?= $members ?></p><p class="tile-note"><?= $newMembers ?> joined in 30 days</p></div>
   </div>
 
-  <section class="analytics" aria-labelledby="sales-title">
-    <h2 id="sales-title" class="section-title">Sales</h2>
+  <section class="analytics" aria-labelledby="lending-title">
+    <h2 id="lending-title" class="section-title">Lending</h2>
     <div class="analytics-grid">
-      <div class="panel"><?= bar_table('Revenue by category', $byCategory, 'name', 'revenue', fn($r) => money($r['revenue']) . ' · ' . $r['units'] . ' sold') ?></div>
-      <div class="panel"><?= bar_table('Top 5 books by copies sold', $topBooks, 'title', 'units', fn($r) => $r['units'] . ' copies') ?></div>
+      <div class="panel"><?= bar_table('Top 5 most borrowed books', $topBooks, 'title', 'loans', fn($r) => $r['loans'] . ' loans') ?></div>
+      <div class="panel"><?= bar_table('Loans by category', $byCategory, 'name', 'loans', fn($r) => $r['loans'] . ' loans') ?></div>
+      <div class="panel">
+        <?php if ($queues): ?>
+        <?= bar_table('Longest queues right now', $queues, 'title', 'waiting', fn($r) => $r['waiting'] . ' waiting', 'bar-teal') ?>
+        <?php else: ?>
+        <h3 class="chart-title">Longest queues right now</h3><p class="muted">Nobody is waiting for a book.</p>
+        <?php endif; ?>
+      </div>
+      <div class="panel">
+        <h3 class="chart-title">Overdue loans</h3>
+        <?php if ($overdue): ?>
+        <ul class="unanswered" role="list">
+          <?php foreach ($overdue as $o): ?>
+          <li><span><?= e($o['title']) ?> <span class="muted small">· <?= e($o['full_name']) ?></span></span><small class="overdue-fee"><?= days_text((int) $o['days_late']) ?> · <?= money($o['fee']) ?></small></li>
+          <?php endforeach; ?>
+        </ul>
+        <?php else: ?>
+        <p class="muted">Every book on loan is within its due date.</p>
+        <?php endif; ?>
+      </div>
       <div class="panel span-2">
-        <h3 class="chart-title">Paid orders per day, last 14 days</h3>
-        <div class="columns-chart" style="--count: 14" role="img" aria-label="Paid orders per day for the last 14 days: <?= e(implode(', ', array_map(fn($d, $n) => date('j M', strtotime($d)) . ' ' . $n, array_keys($perDay), $perDay))) ?>">
+        <h3 class="chart-title">New loans per day, last 14 days</h3>
+        <div class="columns-chart" style="--count: 14" role="img" aria-label="New loans per day for the last 14 days: <?= e(implode(', ', array_map(fn($d, $n) => date('j M', strtotime($d)) . ' ' . $n, array_keys($perDay), $perDay))) ?>">
           <?php foreach ($perDay as $d => $n): ?>
           <div class="col"><span class="col-num"><?= $n ?></span><span class="col-fill" style="--value: <?= round($n / $maxDay * 100) ?>%"></span></div>
           <?php endforeach; ?>
@@ -152,7 +178,7 @@ $maxDay = max($perDay) ?: 1;
         <?= cover_img($p, 'pending-cover', true, 100) ?>
         <div class="pending-body">
           <h3><?= e($p['title']) ?></h3>
-          <p class="muted"><?= e($p['author']) ?> · <?= e($p['category']) ?> · <?= e(year_label((int) $p['published_year'])) ?> · <?= money($p['price']) ?> · <?= (int) $p['stock'] ?> copies</p>
+          <p class="muted"><?= e($p['author']) ?> · <?= e($p['category']) ?> · <?= e(year_label((int) $p['published_year'])) ?> · <?= (int) $p['stock'] ?> copies offered</p>
           <p class="small"><?= e(mb_strimwidth($p['synopsis'], 0, 220, '...')) ?></p>
           <p class="small muted"><?= e($p['serial_no']) ?> · sent by <?= e($p['added_by_name'] ?? 'unknown') ?> on <?= e(date('j M Y', strtotime($p['created_at']))) ?> · <?= $p['sample_text'] ? 'includes a sample' : 'no sample' ?></p>
         </div>
@@ -174,15 +200,16 @@ $maxDay = max($perDay) ?: 1;
     <div class="section-head"><h2 id="books-title">Books in the catalogue</h2><p class="muted small"><?= count($books) ?> approved titles</p></div>
     <div class="table-wrap">
       <table class="data-table admin-books">
-        <caption>Edit price, stock and home page placement. Books that have been ordered cannot be deleted.</caption>
-        <thead><tr><th scope="col">Serial</th><th scope="col">Title</th><th scope="col">Price (S$)</th><th scope="col">Stock</th><th scope="col">Staff pick</th><th scope="col">Featured</th><th scope="col">Actions</th></tr></thead>
+        <caption>Edit copies owned, replacement value and home page placement. Books that have been borrowed are kept for the loan records.</caption>
+        <thead><tr><th scope="col">Serial</th><th scope="col">Title</th><th scope="col">Value (S$)</th><th scope="col">Copies</th><th scope="col">On loan</th><th scope="col">Staff pick</th><th scope="col">Featured</th><th scope="col">Actions</th></tr></thead>
         <tbody>
           <?php foreach ($books as $b): $f = 'edit-' . (int) $b['id']; ?>
           <tr>
             <td class="mono"><?= e($b['serial_no']) ?></td>
             <th scope="row"><a href="<?= e(book_url((int) $b['id'])) ?>"><?= e($b['title']) ?></a><span class="muted small block"><?= e($b['author']) ?> · <?= e($b['category']) ?></span></th>
-            <td><label class="visually-hidden" for="<?= $f ?>-price">Price of <?= e($b['title']) ?></label><input class="input input-sm" form="<?= $f ?>" id="<?= $f ?>-price" type="number" name="price" min="0.5" max="500" step="0.01" required value="<?= e($b['price']) ?>"></td>
-            <td><label class="visually-hidden" for="<?= $f ?>-stock">Stock of <?= e($b['title']) ?></label><input class="input input-sm" form="<?= $f ?>" id="<?= $f ?>-stock" type="number" name="stock" min="0" max="999" step="1" required value="<?= (int) $b['stock'] ?>"></td>
+            <td><label class="visually-hidden" for="<?= $f ?>-price">Replacement value of <?= e($b['title']) ?></label><input class="input input-sm" form="<?= $f ?>" id="<?= $f ?>-price" type="number" name="price" min="0" max="500" step="0.01" required value="<?= e($b['price']) ?>"></td>
+            <td><label class="visually-hidden" for="<?= $f ?>-stock">Copies of <?= e($b['title']) ?> owned</label><input class="input input-sm" form="<?= $f ?>" id="<?= $f ?>-stock" type="number" name="stock" min="<?= (int) $b['on_loan'] ?>" max="999" step="1" required value="<?= (int) $b['stock'] ?>"></td>
+            <td class="num"><?= (int) $b['on_loan'] ?></td>
             <td><input form="<?= $f ?>" type="checkbox" name="is_staff_pick" value="1" aria-label="Staff pick: <?= e($b['title']) ?>"<?= $b['is_staff_pick'] ? ' checked' : '' ?>></td>
             <td><input form="<?= $f ?>" type="radio" name="is_featured" value="1" aria-label="Feature <?= e($b['title']) ?> on the home page"<?= $b['is_featured'] ? ' checked' : '' ?>></td>
             <td>
@@ -190,7 +217,7 @@ $maxDay = max($perDay) ?: 1;
                 <?= csrf_field() ?>
                 <input type="hidden" name="id" value="<?= (int) $b['id'] ?>">
                 <button class="btn btn-secondary btn-sm" type="submit" name="action" value="update">Save</button>
-                <?php if (!$b['times_ordered']): ?>
+                <?php if (!$b['times_borrowed']): ?>
                 <button class="btn btn-danger btn-sm" type="submit" name="action" value="delete" formnovalidate aria-label="Delete <?= e($b['title']) ?>">Delete</button>
                 <?php endif; ?>
               </form>

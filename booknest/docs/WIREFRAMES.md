@@ -10,7 +10,7 @@ type and imagery come later from the design system. Desktop is 1280px, mobile is
 DESKTOP
 +--------------------------------------------------------------------------------+
 | [skip to content]                                                              |
-| LOGO BookNest   Home  Browse  Study Rooms   ( search books, authors... )  [Cart 2] [My Account] |
+| LOGO BookNest   Home  Browse  Study Rooms   ( search books, authors... )  [Loans 2] [My Account] |
 +--------------------------------------------------------------------------------+
 | flash message (success / error / info), dismissible                            |
 +--------------------------------------------------------------------------------+
@@ -22,7 +22,7 @@ DESKTOP
 
 MOBILE
 +------------------------------+
-| LOGO BookNest   [Cart 2][≡]|
+| LOGO BookNest  [Loans 2][≡]|
 | ( search books...        )[>]|
 +------------------------------+
 | [≡] opens: Home / Browse /   |
@@ -40,7 +40,8 @@ DESKTOP
 |  Frankenstein                    (h1, display serif)       |  ▒▒▒▒▒▒  |        |
 |  Mary Shelley · 1818 · ★ 4.6                               |  cover   |        |
 |  One line hook, two lines max.                             |  ▒▒▒▒▒▒  |        |
-|  [Buy now S$14.90]  [Read a sample]                        +----------+        |
+|  ● Available to borrow                                     |          |        |
+|  [Borrow it free]  [Read a sample]                         +----------+        |
 +--------------------------------------------------------------------------------+
 | VISITOR: Three clicks to anything (3 points)     | SIGN IN CARD (email)(pass) [Sign in] |
 | MEMBER:  Welcome back, Aisha · next booking · [Add a book] [My Shelf]           |
@@ -68,7 +69,7 @@ below value points; rows show 2.3 cards so the cut off card signals "swipe".
 | chips: [All] [Fiction] [Mystery] [Sci-Fi] [Non Fiction] [Young] [Classics]     |
 | ( Refine these results... )                         Sort [ Title A-Z  v ] [Go] |
 +--------------------------------------------------------------------------------+
-| MEMBER + serial query:  SERIAL MATCH panel  ▒ | serial, stock, status, added by |
+| MEMBER + serial query:  SERIAL MATCH panel ▒ | serial, copies, loans, status, by |
 +--------------------------------------------------------------------------------+
 | [▒ card] [▒ card] [▒ card] [▒ card] [▒ card] [▒ card]   grid, 6 cols desktop   |
 | [▒ card] [▒ card] ...                                   2 cols mobile          |
@@ -86,8 +87,9 @@ below value points; rows show 2.3 cards so the cut off card signals "swipe".
 | |  ▒▒▒▒▒▒▒  |   Frankenstein (h1)                                            |
 | |  cover    |   Mary Shelley                                                 |
 | |  ▒▒▒▒▒▒▒  |   ★ 4.6 · 1818 · 280 pages                                     |
-| +-----------+   S$14.90   In stock                                           |
-|                 [Buy now] [Add to cart] [Read a sample] [Save to shelf]        |
+| +-----------+   ● Available to borrow   (or Borrowed until 6 Oct · 3 waiting) |
+|                 3 of 4 copies on the shelf · 14 day loans, free for members    |
+|                 [Borrow] or [Join the queue]  [Read a sample] [Save to shelf]  |
 |                 Synopsis paragraph...                                          |
 |                 Details: serial · category · year · pages                      |
 +--------------------------------------------------------------------------------+
@@ -112,28 +114,28 @@ DESKTOP (two page spread)
 |  [< Previous]   ============------------ progress   [Next >]                   |
 +--------------------------------------------------------------------------------+
 MOBILE: one page fills the screen, same bars. NO JS: pages stacked vertically.
-LAST PAGE: "End of sample" ▒ cover  [Buy now]  [Back to book]
+LAST PAGE: "End of sample" ▒ cover  [Borrow this book]  [Back to book]
 ```
 
-## 5. Cart and checkout (`checkout.php`)
+## 5. Borrow (`borrow.php`, replaced the cart and checkout on 2 October 2026)
 
 ```
 +--------------------------------------------------------------------------------+
-| Home > Checkout                                                                |
-| h1 Checkout                                                                    |
-| +----------------------------------------+  +--------------------------------+ |
-| | Your details                           |  | ORDER SUMMARY (sticky)         | |
-| | (Full name)          (Email)           |  | ▒ Title  qty( 1 )[Update][x]   | |
-| | (Phone)                                |  | ▒ Title  qty( 2 )[Update][x]   | |
-| | Delivery ( ) Delivery  ( ) Pickup      |  | Subtotal / Delivery / Total    | |
-| | (Address, shown for delivery)          |  +--------------------------------+ |
-| | (Note)                                 |                                     |
-| | PAYMENT SIMULATOR (o) Success ( ) Fail |                                     |
-| | [Place order S$29.80]                  |                                     |
-| +----------------------------------------+                                     |
-| DONE STATE: banner "Order #42 is confirmed" + summary. EMPTY: ▒ + [Browse]     |
+| Home > Fiction > The Midnight Library > Borrow                                 |
+| h1 Borrow this book                                                            |
+| +-----------------------------+  +-------------------------------------------+ |
+| | ▒ cover  The Midnight Library|  | When will you collect it?                 | |
+| |          Matt Haig            |  | Collection date [ Today, Fri 2 Oct ·      | |
+| |          ● Available to borrow|  |                   due back Fri 16 Oct  v ] | |
+| |          3 of 4 on the shelf  |  | · 14 days from the day you collect        | |
+| +-----------------------------+  | · Return early any time                   | |
+|                                  | · Late returns S$0.50 a day               | |
+|                                  | [Confirm loan]                            | |
+|                                  +-------------------------------------------+ |
+| OTHER STATES: "You already have this book" · "You are #2 in line" [Leave]      |
+|               "Every copy is out" [Join the queue] · held copy: "until Sun 4 Oct"|
 +--------------------------------------------------------------------------------+
-MOBILE: summary first (collapsed list), then form.
+
 ```
 
 ## 6. Study rooms (`rooms.php`)
@@ -163,10 +165,13 @@ MOBILE: date chips scroll; table wrapper scrolls with sticky room column.
 ```
 +--------------------------------------------------------------------------------+
 | h1 Hello, Aisha                         [Add a book] [Admin] [Sign out]        |
-| tiles: Books on shelf 4 | Orders 3 | Minutes left today 60                     |
+| tiles: On loan 2 | Fees owed S$2.00 | Waiting for 1 | Minutes left 60 | Shelf 4 |
 +--------------------------------------------------------------------------------+
 | Upcoming bookings: Folio · Tue 29 Sep · 14:00-15:00   [Cancel] -> [Yes, cancel]|
-| Orders: #41 · 2 books · S$29.80 · Paid                                         |
+| Your loans: ▒ The Silent Patient · 4 days overdue, S$2.00 so far   [Return]   |
+|             ▒ Atomic Habits · Due back in 9 days                    [Return]   |
+| Waiting for: ▒ Fourth Wing · You are #2 in line                [Leave queue]   |
+| Recent returns: table of book, collected, due, returned, late fee             |
 | My Shelf: [▒][▒][▒][▒]  each with [Remove]                                      |
 | My submissions: The Jungle Book · Pending                                      |
 +--------------------------------------------------------------------------------+
@@ -195,7 +200,7 @@ MOBILE: illustration becomes a short banner above the tabs.
 | Serial lookup: (BNT-000123) [Look up]  -> result panel                         |
 | +------------------------------------------+  +--------------------+           |
 | | (Serial) (Title) (Author) [Category v]   |  | LIVE COVER PREVIEW |           |
-| | (Price) (Year) (Pages) (Stock)           |  |  ▒▒▒ title/author  |           |
+| | (Year) (Pages) (Copies)                  |  |  ▒▒▒ title/author  |           |
 | | (Synopsis ................. 0/2000)      |  |                    |           |
 | | (Sample text, ---PAGE--- between pages)  |  +--------------------+           |
 | | [Submit for review]                      |                                   |
@@ -208,13 +213,13 @@ MOBILE: illustration becomes a short banner above the tabs.
 ```
 +--------------------------------------------------------------------------------+
 | h1 Library dashboard                                                           |
-| tiles: Revenue | Paid orders | Avg order | Payment success | Members           |
+| tiles: On loan | Overdue | Fees outstanding | People in queues | Members       |
 +--------------------------------------------------------------------------------+
-| Revenue by category  ████████ S$120  | Top 5 books ██████                       |
-| Orders per day (14)  ▂▃▅▇▅▃ columns  | Bookings per room ████ | Busiest hours  |
+| Most borrowed ██████ | Loans by category ████ | Longest queues ███ | Overdue   |
+| New loans per day (14)  ▂▃▅▇▅▃ columns | Bookings per room ████ | Busiest hours|
 +--------------------------------------------------------------------------------+
 | Pending books: ▒ title · by member · [Approve] [Reject]                        |
-| Books table: serial | title | price( ) | stock( ) | flags | [Save] [Delete]     |
+| Books table: serial | title | value( ) | copies( ) | on loan | flags | [Save]  |
 | Rooms: Folio · open [Close room]                                               |
 +--------------------------------------------------------------------------------+
 ```
