@@ -99,3 +99,36 @@ function availability(string $date, array $rooms, int $userId): array
     }
     return $grid;
 }
+
+// ---- The Crescent: the library map --------------------------------------------------------
+// The building is a crescent moon. Study rooms sit on four arcs (curved rows) that share one
+// centre point. The map is an SVG 660 units wide and 620 high; these are that centre's x and y.
+const MAP_CX = 330;
+const MAP_CY = 310;
+
+// Describes each arc: its name for visitors, how far it is from the centre (radius), how far it
+// opens above and below the west point in degrees (half_span), and the size of one room tile.
+// Inner arcs are shorter, which is what gives the building its tapering moon shape.
+function map_arcs(): array
+{
+    return [
+        'Arc A' => ['title' => 'Focus pods',    'radius' => 262, 'half_span' => 100, 'w' => 34, 'h' => 24],
+        'Arc B' => ['title' => 'Study rooms',   'radius' => 224, 'half_span' => 88,  'w' => 36, 'h' => 26],
+        'Arc C' => ['title' => 'Media rooms',   'radius' => 186, 'half_span' => 72,  'w' => 38, 'h' => 28],
+        'Arc D' => ['title' => 'Project rooms', 'radius' => 148, 'half_span' => 48,  'w' => 46, 'h' => 30],
+    ];
+}
+
+// Returns where room number $index (0 = first) of $count sits on an arc: its x and y on the map
+// and the angle of that spot. Rooms are spread evenly from the top end of the arc to the bottom.
+// 180 degrees is due west (the middle of the crescent); cos and sin turn an angle into x and y.
+function map_position(array $arc, int $index, int $count): array
+{
+    $step = $count > 1 ? (2 * $arc['half_span']) / ($count - 1) : 0;   // degrees between two rooms
+    $angle = 180 + $arc['half_span'] - $index * $step;
+    return [
+        'x' => round(MAP_CX + $arc['radius'] * cos(deg2rad($angle)), 1),
+        'y' => round(MAP_CY + $arc['radius'] * sin(deg2rad($angle)), 1),
+        'angle' => round($angle, 1),
+    ];
+}

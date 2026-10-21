@@ -22,6 +22,9 @@ $searchValue = is_page('catalogue.php') ? input($_GET, 'q', 100) : '';
 <meta name="description" content="<?= e($page_desc) ?>">
 <meta name="theme-color" content="#0E1116">
 <link rel="icon" href="<?= e(url('assets/img/favicon.svg')) ?>" type="image/svg+xml">
+<!-- The two fonts the first screen needs start downloading straight away, alongside the CSS. -->
+<link rel="preload" href="<?= e(url('assets/fonts/inter-var.woff2')) ?>" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="<?= e(url('assets/fonts/noto-serif-700.woff2')) ?>" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="<?= e(asset('css/base.css')) ?>">
 <link rel="stylesheet" href="<?= e(asset('css/components.css')) ?>">
 <link rel="stylesheet" href="<?= e(asset('css/pages.css')) ?>">
@@ -77,7 +80,6 @@ $searchValue = is_page('catalogue.php') ? input($_GET, 'q', 100) : '';
       <?php else: ?>
       <a class="account-link" href="<?= e(url('sign-in.php')) ?>"<?= is_page('sign-in.php') ? ' aria-current="page"' : '' ?>><?= icon('user', 18) ?><span>Sign in</span></a>
       <?php endif; ?>
-      <?= assistant_widget() ?>
     </div>
   </div>
 </header>

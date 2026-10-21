@@ -25,15 +25,32 @@ $users = [
     ['Gavin Lee', 'gavin@localhost', 'Member123!', 'member', 21],
     ['Hana Sato', 'hana@localhost', 'Member123!', 'member', 7],
 ];
+// The eight members above are the named demo accounts. Fifty study rooms need more people than
+// that to look lived in, so 72 further members are generated from two short name lists.
+$firstNames = ['Amir', 'Bella', 'Caleb', 'Devi', 'Ethan', 'Fiona', 'Hafiz', 'Irene', 'Jun', 'Kavya', 'Liam', 'Mei'];
+$lastNames = ['Chua', 'Goh', 'Menon', 'Ong', 'Salleh', 'Yeo'];
+foreach ($firstNames as $f => $first) {
+    foreach ($lastNames as $l => $last) {
+        $users[] = ["$first $last", strtolower("$first.$last") . '@localhost', 'Member123!', 'member', 5 + ($f * 6 + $l) * 3];
+    }
+}
 
-$rooms = [
-    ['Folio', 2, 'Level 2', 'whiteboard, power'],
-    ['Quill', 2, 'Level 2', 'power'],
-    ['Atlas', 4, 'Level 3', 'whiteboard, power, screen'],
-    ['Sonnet', 4, 'Level 3', 'whiteboard, power'],
-    ['Vellum', 6, 'Level 4', 'whiteboard, power, screen'],
-    ['Colophon', 6, 'Level 4', 'power, screen'],
+// Study rooms: the four arcs of the Crescent. [arc letter, number of rooms, seats, features]
+// Rooms are named by arc and number, for example A07. Their place on the map comes from that
+// order (see map_arcs() and map_position() in includes/rooms.php).
+$roomArcs = [
+    ['A', 20, 2, 'power'],
+    ['B', 15, 4, 'whiteboard, power'],
+    ['C', 10, 4, 'whiteboard, power, screen'],
+    ['D', 5, 6, 'whiteboard, power, screen'],
 ];
+$closedRooms = ['A13', 'C04'];   // closed for maintenance, so the map shows that state too
+$rooms = [];
+foreach ($roomArcs as [$letter, $howMany, $seats, $features]) {
+    for ($n = 1; $n <= $howMany; $n++) {
+        $rooms[] = [sprintf('%s%02d', $letter, $n), $seats, 'Arc ' . $letter, $features];
+    }
+}
 
 // Downloads (once) and returns the plain text of a Project Gutenberg book.
 function gutenberg_text(int $id): string
@@ -282,9 +299,14 @@ $sql[] = "INSERT INTO books (id, serial_no, isbn, title, author, publisher, form
 $rows = [];
 @mkdir(APP_ROOT . '/assets/img/rooms', 0777, true);
 foreach ($rooms as $i => [$name, $cap, $floor, $features]) {
-    $path = 'img/rooms/' . strtolower($name) . '.svg';
-    file_put_contents(APP_ROOT . '/assets/' . $path, room_svg($name, $cap, $features, $i + 1));
-    $rows[] = '(' . ($i + 1) . ', ' . q($name) . ", $cap, " . q($floor) . ', ' . q($features) . ', ' . q($path) . ', 1)';
+    // One floor plan picture per arc (all rooms of an arc are alike), drawn when its first room is met.
+    $path = 'img/rooms/' . strtolower(str_replace(' ', '-', $floor)) . '.svg';
+    if (!in_array($path, $drawn ?? [], true)) {
+        file_put_contents(APP_ROOT . '/assets/' . $path, room_svg($floor, $cap, $features, count($drawn ?? []) + 2));
+        $drawn[] = $path;
+    }
+    $rows[] = '(' . ($i + 1) . ', ' . q($name) . ", $cap, " . q($floor) . ', ' . q($features) . ', ' . q($path) . ', '
+        . (in_array($name, $closedRooms, true) ? 0 : 1) . ')';
 }
 $sql[] = "INSERT INTO study_rooms (id, name, capacity, floor, features, image_path, is_active) VALUES\n  " . implode(",\n  ", $rows) . ";\n";
 
@@ -292,7 +314,8 @@ $sql[] = "INSERT INTO study_rooms (id, name, capacity, floor, features, image_pa
 // overdue and the queues always waiting, whenever the demo runs (deterministic, so reproducible).
 mt_srand(4727);
 $approved = array_values(array_filter(array_keys($all), fn($k) => $all[$k]['status'] === 'approved'));
-$members = array_slice(array_values($userIds), 1);
+$members = array_slice(array_values($userIds), 1, 8);   // the eight named members
+$bookers = array_slice(array_values($userIds), 1);       // every member, for room bookings
 $bookId = [];
 foreach ($all as $k => $b) {
     $bookId[$b['title']] = $k + 1;
@@ -365,7 +388,7 @@ for ($d = -14; $d <= 3; $d++) {
     $roomBusy = [];
     $userMinutes = [];
     $userBusy = [];
-    $wanted = mt_rand(7, 12);
+    $wanted = mt_rand(70, 95);
     if ($d === 0) {
         // Ben has used his hour today, so the daily cap can be demonstrated with his account.
         $bookRows[] = "(1, $ben, CURDATE(), '10:00:00', '11:00:00', 'Group project', 'confirmed', NOW() - INTERVAL 1 DAY)";
@@ -380,9 +403,12 @@ for ($d = -14; $d <= 3; $d++) {
         $userMinutes[$aisha] = 60;
         $userBusy[$aisha][] = [840, 900];
     }
-    for ($t = 0; $t < $wanted * 3 && $wanted > 0; $t++) {
-        $room = mt_rand(1, 6);
-        $uid = $members[mt_rand(0, count($members) - 1)];
+    for ($t = 0; $t < 600 && $wanted > 0; $t++) {
+        $room = mt_rand(1, count($rooms));
+        if (in_array($rooms[$room - 1][0], $closedRooms, true)) {
+            continue; // nobody books a closed room
+        }
+        $uid = $bookers[mt_rand(0, count($bookers) - 1)];
         if ($d === 0 && $uid === $aisha) {
             continue; // keep Aisha's quota free today for the live demo
         }
@@ -425,27 +451,6 @@ $sql[] = "INSERT INTO room_bookings (room_id, user_id, booking_date, start_time,
 $shelf = [[$aisha, 1], [$aisha, 13], [$aisha, 25], [$aisha, 32], [$ben, 7], [$ben, 14], [$userIds['chloe@localhost'], 2]];
 $sql[] = "INSERT INTO shelf (user_id, book_id, added_at) VALUES\n  "
     . implode(",\n  ", array_map(fn($s) => "({$s[0]}, {$s[1]}, NOW() - INTERVAL " . ($s[1] % 9) . ' DAY)', $shelf)) . ";\n";
-
-// Questions asked to Paige over the last two weeks, so the admin dashboard has something to show.
-$asked = [
-    ['What time do you close today?', 'hours', 1], ['Opening hours', 'hours', 1], ['What do I have on loan?', 'loans', 1],
-    ['when is my book due', 'loans', 1], ['Book a study room', 'rooms', 1], ['how do i cancel my room booking', 'rooms', 1],
-    ['Late fees', 'fees', 1], ['do you deliver books', 'collect', 1], ['Do you have Atomic Habits?', 'book-search', 1],
-    ['is sapiens available', 'book-search', 1], ['Recommend a book', 'recommend', 1], ['recommend a thriller', 'recommend', 1],
-    ['How do I borrow?', 'borrow', 1], ['how does the queue work', 'queue', 1], ['I forgot my password', 'account', 1],
-    ['Talk to a person', 'contact', 1], ['can i return a book early', 'return', 1], ['Do you sell gift cards?', 'unknown', 0], ['is there parking nearby', 'unknown', 0],
-    ['can I bring coffee into the study rooms', 'rooms', 1], ['do you buy second hand books', 'unknown', 0],
-    ['are you a robot', 'about', 1], ['can I print here', 'unknown', 0],
-];
-$rows = [];
-foreach ($asked as $i => [$question, $intent, $answered]) {
-    $times = $answered ? mt_rand(1, 4) : 1;
-    for ($k = 0; $k < $times; $k++) {
-        $uid = mt_rand(0, 2) ? $members[mt_rand(0, count($members) - 1)] : 'NULL';
-        $rows[] = "($uid, " . q($question) . ', ' . q($intent) . ", $answered, NOW() - INTERVAL " . mt_rand(0, 13) . ' DAY - INTERVAL ' . mt_rand(10, 600) . ' MINUTE)';
-    }
-}
-$sql[] = "INSERT INTO assistant_log (user_id, question, intent, answered, created_at) VALUES\n  " . implode(",\n  ", $rows) . ";\n";
 
 file_put_contents(APP_ROOT . '/sql/seed.sql', implode("\n", $sql));
 

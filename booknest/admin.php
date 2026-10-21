@@ -45,16 +45,11 @@ for ($i = 13; $i >= 0; $i--) {
 $byRoom = db_all("SELECT r.name, COUNT(rb.id) AS bookings, COALESCE(SUM(TIMESTAMPDIFF(MINUTE, rb.start_time, rb.end_time)), 0) AS minutes
                   FROM study_rooms r LEFT JOIN room_bookings rb ON rb.room_id = r.id AND rb.status = 'confirmed'
                     AND rb.booking_date BETWEEN CURDATE() - INTERVAL 30 DAY AND CURDATE() + INTERVAL 7 DAY
-                  GROUP BY r.id, r.name ORDER BY bookings DESC");
+                  GROUP BY r.id, r.name ORDER BY bookings DESC LIMIT 8");
 $byHour = db_all("SELECT HOUR(start_time) AS hour, COUNT(*) AS bookings FROM room_bookings
                   WHERE status = 'confirmed' GROUP BY HOUR(start_time) ORDER BY hour");
 $cancelRate = (int) round((float) db_value("SELECT COALESCE(AVG(status = 'cancelled'), 0) * 100 FROM room_bookings"));
 
-// Paige, the help assistant: questions by topic and the latest ones she could not answer.
-$askedByTopic = db_all("SELECT intent, COUNT(*) AS questions FROM assistant_log GROUP BY intent ORDER BY questions DESC LIMIT 8");
-$assistantTotals = db_one("SELECT COUNT(*) AS total, COALESCE(SUM(answered), 0) AS answered FROM assistant_log");
-$unanswered = db_all("SELECT question, created_at FROM assistant_log WHERE answered = 0 ORDER BY created_at DESC LIMIT 6");
-$answerRate = $assistantTotals['total'] ? round($assistantTotals['answered'] / $assistantTotals['total'] * 100) : 0;
 
 $pending = db_all("SELECT b.*, c.name AS category, u.full_name AS added_by_name FROM books b
                    JOIN categories c ON c.id = b.category_id LEFT JOIN users u ON u.id = b.added_by
@@ -142,29 +137,9 @@ $maxDay = max($perDay) ?: 1;
   <section class="analytics" aria-labelledby="rooms-an-title">
     <h2 id="rooms-an-title" class="section-title">Study rooms</h2>
     <div class="analytics-grid">
-      <div class="panel"><?= bar_table('Bookings per room (30 days back, 7 ahead)', $byRoom, 'name', 'bookings', fn($r) => $r['bookings'] . ' · ' . round($r['minutes'] / 60, 1) . ' h', 'bar-teal') ?></div>
+      <div class="panel"><?= bar_table('The 8 busiest rooms (30 days back, 7 ahead)', $byRoom, 'name', 'bookings', fn($r) => $r['bookings'] . ' · ' . round($r['minutes'] / 60, 1) . ' h', 'bar-teal') ?></div>
       <div class="panel"><?= bar_table('Busiest start times (all bookings)', array_map(fn($r) => ['label' => sprintf('%02d:00', $r['hour']), 'bookings' => $r['bookings']], $byHour), 'label', 'bookings', fn($r) => $r['bookings'] . ' bookings', 'bar-teal') ?>
         <p class="small muted"><?= $cancelRate ?>% of bookings are cancelled in advance.</p>
-      </div>
-    </div>
-  </section>
-
-  <section class="analytics" aria-labelledby="assistant-an-title">
-    <h2 id="assistant-an-title" class="section-title"><?= e(ASSISTANT_NAME) ?>, the help assistant</h2>
-    <div class="analytics-grid">
-      <div class="panel"><?= bar_table('What people ask about (' . (int) $assistantTotals['total'] . ' questions, ' . $answerRate . '% answered)', $askedByTopic, 'intent', 'questions', fn($r) => $r['questions'] . ' questions') ?></div>
-      <div class="panel">
-        <h3 class="chart-title">Questions she could not answer</h3>
-        <?php if ($unanswered): ?>
-        <ul class="unanswered" role="list">
-          <?php foreach ($unanswered as $u): ?>
-          <li><span><?= e($u['question']) ?></span><small class="muted"><?= e(date('j M, H:i', strtotime($u['created_at']))) ?></small></li>
-          <?php endforeach; ?>
-        </ul>
-        <p class="small muted">Use these to decide what to add to the help guide.</p>
-        <?php else: ?>
-        <p class="muted">Nothing unanswered. Every question so far matched a topic.</p>
-        <?php endif; ?>
       </div>
     </div>
   </section>
@@ -234,7 +209,6 @@ $maxDay = max($perDay) ?: 1;
     <ul class="room-admin" role="list">
       <?php foreach ($rooms as $r): ?>
       <li class="panel room-admin-item">
-        <img src="<?= e(url('assets/' . $r['image_path'])) ?>" alt="" width="120" height="75" loading="lazy">
         <div><h3><?= e($r['name']) ?></h3><p class="small muted"><?= (int) $r['capacity'] ?> seats · <?= e($r['floor']) ?></p></div>
         <span class="pill <?= $r['is_active'] ? 'is-in' : 'is-out' ?>"><?= $r['is_active'] ? 'Open' : 'Closed' ?></span>
         <form action="<?= e(url('process/admin-action.php')) ?>" method="post">

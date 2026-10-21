@@ -26,6 +26,17 @@ function icon(string $name, int $size = 20): string
         'door' => '<path d="M5 21V4a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v17"/><path d="M3 21h18"/><circle cx="15" cy="12" r="1"/>',
         'chart' => '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
         'mail' => '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
+        'home' => '<path d="m3 11 9-7 9 7"/><path d="M5 10v10h5v-6h4v6h5V10"/>',
+        'compass' => '<circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5z"/>',
+        'chat' => '<path d="M4 5h16v11H9l-5 4z"/><path d="M8 10h8M8 13h5"/>',
+        'sparkle' => '<path d="M12 3c.6 4.2 2.8 6.4 7 7-4.2.6-6.4 2.8-7 7-.6-4.2-2.8-6.4-7-7 4.2-.6 6.4-2.8 7-7z"/><path d="M19 3v4M17 5h4"/>',
+        'arrow' => '<path d="M5 12h14M13 6l6 6-6 6"/>',
+        'bulb' => '<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/>',
+        'coin' => '<circle cx="12" cy="12" r="9"/><path d="M14.5 9.5c-.4-.9-1.4-1.5-2.5-1.5-1.5 0-2.5.8-2.5 2s1 1.7 2.5 2 2.5.8 2.5 2-1 2-2.5 2c-1.1 0-2.1-.6-2.5-1.5M12 6.5V8M12 16v1.5"/>',
+        'rocket' => '<path d="M5 15c-1 1-1.5 3.5-1.5 5.5 2 0 4.5-.5 5.5-1.5"/><path d="M9 15l-2-2c1-4 5-9 13-10-1 8-6 12-10 13z"/><circle cx="15" cy="9" r="1.5"/>',
+        'globe' => '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.5 5.7 3.5 9s-1 6.3-3.5 9c-2.5-2.7-3.5-5.7-3.5-9s1-6.3 3.5-9z"/>',
+        'feather' => '<path d="M20 4c-8 0-13 5-13 13v3"/><path d="M7 17c6 0 11-4 13-13M10 14h6"/>',
+        'badge' => '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M6 16c.6-1.5 1.7-2 3-2s2.4.5 3 2M14 10h4M14 13h3"/>',
     ];
     return '<svg class="icon" width="' . $size . '" height="' . $size . '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">'
         . ($paths[$name] ?? '') . '</svg>';
@@ -67,20 +78,21 @@ function book_card(array $b, bool $lazy = true): string
         . '<span class="card-hook">' . e($b['hook']) . '</span><span class="card-cta">View details</span></span></span>'
         . '<span class="card-title">' . e($b['title']) . '</span></a>'
         . '<p class="card-author">' . e($b['author']) . '</p>'
-        . '<p class="card-meta">' . rating_html($b['rating']) . availability_html($b, 'card-avail') . '</p>'
+        . '<p class="card-meta">' . availability_html($b, 'card-avail') . '</p>'
         . '</article>';
 }
 
 // Returns a horizontal, swipeable row of cards with previous and next buttons.
-function book_row(string $id, string $title, array $books, ?string $link = null, string $blurb = ''): string
+// $icon is a small amber icon shown before the title; $link adds a "View all" link on the right.
+function book_row(string $id, string $title, array $books, ?string $link = null, string $blurb = '', string $icon = ''): string
 {
     if (!$books) {
         return '';
     }
-    $heading = $link ? '<a href="' . e($link) . '">' . e($title) . ' <span class="row-see">See all</span></a>' : e($title);
     $html = '<section class="row" aria-labelledby="' . e($id) . '">'
-        . '<div class="row-head"><div><h2 id="' . e($id) . '">' . $heading . '</h2>'
+        . '<div class="row-head"><div class="row-title"><h2 id="' . e($id) . '">' . ($icon ? icon($icon, 20) : '') . e($title) . '</h2>'
         . ($blurb ? '<p class="row-blurb">' . e($blurb) . '</p>' : '') . '</div>'
+        . ($link ? '<a class="row-see" href="' . e($link) . '">View all<span class="visually-hidden"> ' . e($title) . '</span>' . icon('right', 14) . '</a>' : '')
         . '<div class="row-controls" hidden>'
         . '<button type="button" class="icon-btn" data-row-prev aria-label="Show previous books in ' . e($title) . '">' . icon('left') . '</button>'
         . '<button type="button" class="icon-btn" data-row-next aria-label="Show more books in ' . e($title) . '">' . icon('right') . '</button>'

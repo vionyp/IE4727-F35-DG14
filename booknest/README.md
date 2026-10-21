@@ -5,8 +5,6 @@ Members borrow a book for 14 days, queue for popular titles, and see any late fe
 IE4727 Web Application Design, Theme 6 (Online Library). Base Version: HTML5, CSS3, vanilla
 JavaScript, PHP and MySQL only.
 
-**Help assistant:** Paige, in the header of every page, is a scripted assistant (not an AI model) that answers from the site's own data.
-
 **Run it:** see [`docs/SETUP.md`](docs/SETUP.md). Short version: start Apache and MySQL in XAMPP,
 import `sql/schema.sql` then `sql/seed.sql`, open `http://localhost/booknest/`, sign in as
 `aisha@localhost` / `Member123!` or `admin@localhost` / `Admin123!`.
