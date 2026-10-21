@@ -129,15 +129,3 @@ CREATE TABLE shelf (
   CONSTRAINT fk_shelf_book FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
--- Questions put to Paige, the help assistant, so staff can see what people ask and what she could not answer.
-CREATE TABLE assistant_log (
-  id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  user_id    INT UNSIGNED NULL,
-  question   VARCHAR(300) NOT NULL,
-  intent     VARCHAR(40)  NOT NULL,
-  answered   TINYINT(1)   NOT NULL DEFAULT 1,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  KEY ix_assistant_intent (intent),
-  KEY ix_assistant_answered (answered, created_at),
-  CONSTRAINT fk_assistant_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
-) ENGINE=InnoDB;

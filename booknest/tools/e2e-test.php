@@ -172,6 +172,12 @@ check('T16', 'Passwords that differ are refused by PHP', str_contains($f['page']
 $u1 = new Client('u1');
 $f = $u1->submit('process/register.php', ['full_name' => 'Test One', 'email' => "one$stamp@localhost", 'password' => 'Abcdefg123', 'confirm' => 'Abcdefg123', 'agree' => '1']);
 check('T15b', 'Register a new member and sign in', str_contains($f['flash'], 'Welcome to BookNest'), $f['flash']);
+
+// ---- Paige, the old help assistant, has been removed ---------------------------------------------
+$again = $u1->get('index.php')['body'];
+$gone = $u1->req('process/assistant.php', ['message' => 'hello']);
+check('T90', 'Paige has been removed', $gone['code'] === 404 && !str_contains($again, 'assistant') && !db_value("SHOW TABLES LIKE 'assistant_log'"),
+    'process/assistant.php: HTTP ' . $gone['code'] . '; no assistant markup; no assistant_log table');
 $u2 = new Client('u2');
 $u2->submit('process/register.php', ['full_name' => 'Test Two', 'email' => "two$stamp@localhost", 'password' => 'Abcdefg123', 'confirm' => 'Abcdefg123', 'agree' => '1']);
 
@@ -436,28 +442,39 @@ check('T37', 'Dashboard fees outstanding match a manual SUM query', str_contains
 $f = $admin->submit('process/admin-action.php', ['action' => 'delete', 'id' => (string) $bookA]);
 check('T39b', 'A book that has been borrowed cannot be deleted', str_contains($f['flash'], 'kept for the loan records') && db_value('SELECT 1 FROM books WHERE id = ?', [$bookA]), $f['flash']);
 
-// ---- Paige, the help assistant ---------------------------------------------------------------------
-$p = new Client('paige');
-$logged = (int) db_value('SELECT COUNT(*) FROM assistant_log');
-$f = $p->submit('process/assistant.php', ['message' => 'What time do you close?']);
-check('T52', 'Assistant answers opening hours on the page', str_contains($f['page']['body'], 'We are open every day, 10:00 to 21:00')
-    && str_contains($f['page']['body'], '<details class="assistant" id="assistant" open'), 'Reply shown in the open chat panel');
-$f = $p->submit('process/assistant.php', ['quick' => 'Late fees']);
-check('T53', 'Assistant quick question button works', str_contains($f['page']['body'], 'Returning late costs S$0.50'), 'Late fee answer shown; earlier messages kept: '
-    . (str_contains($f['page']['body'], 'What time do you close?') ? 'yes' : 'no'));
-$f = $p->submit('process/assistant.php', ['message' => 'what do I have on loan']);
-check('T54', 'Assistant will not show loans to a visitor', str_contains($f['page']['body'], 'only show loans to the member they belong to')
-    && !str_contains($f['page']['body'], 'books on loan:'), 'Asked to sign in, no loan details shown');
-$f = $aisha->submit('process/assistant.php', ['message' => 'what do I have on loan']);
-check('T55', 'Assistant shows a member their own loans', str_contains($f['page']['body'], 'Atomic Habits, due back') && str_contains($f['page']['body'], 'days overdue'),
-    'Aisha sees her two loans with due date and overdue fee');
-$f = $p->submit('process/assistant.php', ['message' => '<script>alert(1)</script> can I bring my dog']);
-check('T56', 'Assistant escapes input and logs what it cannot answer', !str_contains($f['page']['body'], '<script>alert(1)</script>')
-    && (int) db_value("SELECT COUNT(*) FROM assistant_log WHERE answered = 0 AND question LIKE '%bring my dog%'") === 1, 'Script shown as text; question logged as unanswered');
-$before = (int) db_value('SELECT COUNT(*) FROM assistant_log');
-$r = $p->req('process/assistant.php', ['message' => 'hello']);
-check('T57', 'Assistant rejects a post without CSRF token', (int) db_value('SELECT COUNT(*) FROM assistant_log') === $before, 'Nothing logged, nothing answered');
-check('T58', 'Every question is logged for staff', $before - $logged === 5, ($before - $logged) . ' new rows in assistant_log for 5 questions');
+// ---- The Crescent: library map on the study rooms page ---------------------------------------------
+$mapDate = date('Y-m-d', strtotime('+2 day'));   // a day that has seeded bookings
+$r = $v->get('rooms.php?date=' . $mapDate . '&at=16:00');
+$tiles = preg_match_all('/class="mroom is-/', $r['body']);
+$roomCount = (int) db_value('SELECT COUNT(*) FROM study_rooms');
+preg_match('/<a class="mroom is-free[^"]*" href="([^"]+)"/', $r['body'], $m);
+$mapLink = html_entity_decode($m[1] ?? '');
+parse_str((string) parse_url($mapLink, PHP_URL_QUERY), $mapQuery);
+$landing = $mapLink ? $v->get(local_path($mapLink)) : ['body' => ''];
+check('T80', 'Library map: every room is drawn and a free one links to the booking form',
+    $tiles === $roomCount && ($mapQuery['date'] ?? '') === $mapDate && ($mapQuery['start'] ?? '') === '16:00' && !empty($mapQuery['room'])
+    && str_contains($landing['body'], 'is-selected'),
+    "$tiles of $roomCount rooms drawn; link carries date " . ($mapQuery['date'] ?? '?') . ', room ' . ($mapQuery['room'] ?? '?') . ', start ' . ($mapQuery['start'] ?? '?') . '; room highlighted on arrival');
+
+// The map must agree with the database: count the rooms really booked at that time.
+$busy = (int) db_value("SELECT COUNT(DISTINCT room_id) FROM room_bookings WHERE booking_date = ? AND status = 'confirmed'
+                        AND start_time <= '16:00:00' AND end_time > '16:00:00'", [$mapDate]);
+$shownTaken = preg_match_all('/class="mroom is-taken/', $r['body']);
+check('T81', 'Library map: rooms shown as taken match the bookings in the database', $shownTaken === $busy,
+    "$shownTaken rooms drawn as taken at 16:00, $busy rooms booked then in the database");
+
+db_exec('UPDATE study_rooms SET is_active = 0 WHERE id = 6');
+$r = $v->get('rooms.php?date=' . $mapDate . '&at=16:00');
+db_exec('UPDATE study_rooms SET is_active = 1 WHERE id = 6');
+check('T82', 'Library map: a closed room is shown as closed and is not a link',
+    (bool) preg_match('/<g class="mroom is-closed" role="img" aria-label="A06, /', $r['body']),
+    'A06 drawn as a closed, non-clickable room');
+
+$r = $v->get('rooms.php?date=' . $mapDate . '&arc=D');
+$rows = preg_match_all('/<th scope="row" class="room-col">/', $r['body']);
+check('T83', 'Timetable shows one arc at a time', $rows === 5 && str_contains($r['body'], 'Timetable: Arc D'), "$rows rows for Arc D (5 rooms)");
+$r = $v->get('rooms.php?at=99:99&arc=Z');
+check('T84', 'Bad time or arc in the address falls back safely', $r['code'] === 200 && str_contains($r['body'], 'Timetable: Arc A'), "HTTP {$r['code']}, default arc shown");
 
 // ---- Session timeout ------------------------------------------------------------------------------
 $t = new Client('timeout');

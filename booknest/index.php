@@ -54,30 +54,26 @@ $scripts = ['rows.js', 'forms.js'];
 require __DIR__ . '/includes/header.php';
 ?>
 
-<?php if ($featured): ?>
-<section class="billboard" aria-labelledby="billboard-title" style="--cover: url('<?= e(url('assets/' . cover_file($featured, true))) ?>')">
-  <div class="billboard-bg" aria-hidden="true"></div>
-  <div class="container billboard-inner">
-    <div class="billboard-copy">
-      <p class="eyebrow">Featured this week · <?= e($featured['category']) ?></p>
-      <h1 id="billboard-title"><?= e($featured['title']) ?></h1>
-      <p class="billboard-meta"><?= e($featured['author']) ?> · <?= e(year_label((int) $featured['published_year'])) ?> · <?= rating_html($featured['rating']) ?></p>
-      <p class="billboard-hook"><?= e($featured['hook']) ?></p>
-      <p class="avail-line"><?= availability_html($featured) ?></p>
-      <div class="cluster billboard-actions">
-        <a class="btn btn-primary" href="<?= e(url('borrow.php?id=' . $featured['id'])) ?>"><?= icon('books', 18) ?> Borrow it free</a>
-        <a class="btn btn-secondary" href="<?= e(url('read.php?id=' . $featured['id'])) ?>"><?= icon('book', 18) ?> Read a <?= sample_word($featured) ?></a>
-        <a class="btn-link" href="<?= e(book_url((int) $featured['id'])) ?>">About this book</a>
-      </div>
-    </div>
+<div class="container">
+  <?php if ($featured): ?>
+  <section class="billboard" aria-labelledby="billboard-title">
+    <!-- One grid: on phones everything stacks (cover above the buttons); on wide screens the cover moves to the right column. -->
+    <p class="eyebrow">Featured this week · <?= e($featured['category']) ?></p>
+    <h1 id="billboard-title"><?= e($featured['title']) ?></h1>
+    <p class="billboard-meta"><?= e($featured['author']) ?> · <?= e(year_label((int) $featured['published_year'])) ?> · <?= rating_html($featured['rating']) ?></p>
+    <p class="billboard-hook"><?= e($featured['hook']) ?></p>
+    <p class="avail-line"><?= availability_html($featured) ?></p>
     <a class="billboard-cover" href="<?= e(book_url((int) $featured['id'])) ?>" tabindex="-1" aria-hidden="true">
       <?= cover_img($featured, '', false, 320) ?>
     </a>
-  </div>
-</section>
-<?php endif; ?>
+    <div class="billboard-actions">
+      <a class="btn btn-primary" href="<?= e(url('borrow.php?id=' . $featured['id'])) ?>"><?= icon('books', 18) ?> Borrow it free</a>
+      <a class="btn btn-secondary" href="<?= e(url('read.php?id=' . $featured['id'])) ?>"><?= icon('book', 18) ?> Read a <?= sample_word($featured) ?></a>
+      <a class="btn-link" href="<?= e(book_url((int) $featured['id'])) ?>">About this book</a>
+    </div>
+  </section>
+  <?php endif; ?>
 
-<div class="container">
   <?php if ($user): ?>
   <section class="welcome panel" aria-labelledby="welcome-title">
     <div>
@@ -107,7 +103,13 @@ require __DIR__ . '/includes/header.php';
       </ol>
     </div>
     <div class="panel sign-in-card">
-      <h2 class="panel-title">Member sign in</h2>
+      <div class="sign-in-head">
+        <span class="sign-in-icon" aria-hidden="true"><?= icon('badge', 20) ?></span>
+        <div>
+          <h2 class="panel-title">Member sign in</h2>
+          <p class="small muted">Borrow books, book study rooms and keep a shelf.</p>
+        </div>
+      </div>
       <form class="form" action="<?= e(url('process/login.php')) ?>" method="post" data-validate novalidate>
         <?= csrf_field() ?>
         <input type="hidden" name="return" value="<?= e(url()) ?>">
@@ -129,42 +131,47 @@ require __DIR__ . '/includes/header.php';
   </section>
   <?php endif; ?>
 
-  <?= book_row('row-recent', 'Recently viewed', $recent) ?>
-  <?= book_row('row-new', 'New arrivals', $newArrivals, url('catalogue.php?sort=newest'), 'Just added to the shelves.') ?>
-  <?= book_row('row-staff', 'Staff picks', $staffPicks, null, 'Chosen by the people who look after the collection.') ?>
+  <?php
+    // A small icon for each row title.
+    $rowIcons = ['self-improvement' => 'bulb', 'business-money' => 'coin', 'fiction' => 'book', 'mystery-thriller' => 'search',
+                 'sci-fi-fantasy' => 'rocket', 'non-fiction' => 'globe', 'classics' => 'feather'];
+  ?>
+  <?= book_row('row-recent', 'Recently viewed', $recent, null, '', 'clock') ?>
+  <?= book_row('row-new', 'New arrivals', $newArrivals, url('catalogue.php?sort=newest'), 'Just added to the shelves.', 'plus') ?>
+  <?= book_row('row-staff', 'Staff picks', $staffPicks, null, 'Chosen by the people who look after the collection.', 'sparkle') ?>
   <?php foreach ($categories as $cat): ?>
-  <?= book_row('row-' . $cat['slug'], $cat['name'], $byCategory[$cat['id']] ?? [], url('catalogue.php?category=' . $cat['slug']), $cat['blurb']) ?>
+  <?= book_row('row-' . $cat['slug'], $cat['name'], $byCategory[$cat['id']] ?? [], url('catalogue.php?category=' . $cat['slug']), $cat['blurb'], $rowIcons[$cat['slug']] ?? 'book') ?>
   <?php endforeach; ?>
 
   <section class="teaser" aria-labelledby="teaser-title">
-    <img src="<?= e(url('assets/img/rooms/atlas.svg')) ?>" alt="Floor plan of the Atlas study room with four seats and a screen" width="480" height="300" loading="lazy">
-    <div>
-      <p class="eyebrow">Study rooms</p>
+    <div class="teaser-copy">
+      <p class="eyebrow eyebrow-teal"><?= icon('door', 16) ?> The Crescent</p>
       <h2 id="teaser-title">A quiet room when you need one.</h2>
-      <p>Six rooms for two to six people, bookable up to a week ahead. Every member gets up to an hour a day, so there is always a room for someone.</p>
-      <p class="teaser-stat"><strong><?= $freeToday ?></strong> free half hour slots left today.</p>
-      <a class="btn btn-primary" href="<?= e(url('rooms.php')) ?>">See free rooms</a>
+      <p><?= count($rooms) ?> rooms for two to six people, set in a crescent around the Moon Garden and bookable up to a week ahead. Every member gets up to an hour a day, so there is always a room for someone.</p>
+    </div>
+    <div class="teaser-side">
+      <p class="teaser-stat"><strong><?= $freeToday ?></strong> <span>free half hour slots left today</span> <small>across <?= count($rooms) ?> rooms</small></p>
+      <a class="btn btn-teal-outline btn-block" href="<?= e(url('rooms.php')) ?>">See free rooms <?= icon('arrow', 18) ?></a>
     </div>
   </section>
 
   <section class="visit" aria-labelledby="visit-title">
-    <div>
-      <p class="eyebrow">Visit us</p>
-      <h2 id="visit-title"><?= e(BRANCH_NAME) ?></h2>
+    <div class="visit-top">
       <p class="status-pill <?= $status['open'] ? 'is-open' : 'is-closed' ?>"><span class="dot" aria-hidden="true"></span><?= e($status['label']) ?> <span class="status-detail">· <?= e($status['detail']) ?></span></p>
-      <p class="muted"><?= icon('pin', 18) ?> <?= e(BRANCH_ADDRESS) ?></p>
+      <span class="visit-zone">SGT (UTC+8)</span>
     </div>
-    <table class="hours-table">
-      <caption class="visually-hidden">Opening hours this week</caption>
-      <tbody>
-        <?php for ($i = 0; $i < 7; $i++): $d = strtotime("+$i day", strtotime('today')); ?>
-        <tr<?= $i === 0 ? ' class="is-today"' : '' ?>>
-          <th scope="row"><?= $i === 0 ? 'Today' : date('l', $d) ?></th>
-          <td><?= sprintf('%02d:00 to %02d:00', OPEN_HOUR, CLOSE_HOUR) ?></td>
-        </tr>
-        <?php endfor; ?>
-      </tbody>
-    </table>
+    <div class="visit-place">
+      <?= icon('pin', 20) ?>
+      <div>
+        <h2 id="visit-title"><?= e(BRANCH_NAME) ?></h2>
+        <p class="muted"><?= e(BRANCH_ADDRESS) ?></p>
+      </div>
+    </div>
+    <dl class="visit-hours">
+      <div><dt>Every day</dt><dd><?= sprintf('%02d:00 to %02d:00', OPEN_HOUR, CLOSE_HOUR) ?></dd></div>
+      <div><dt>Study rooms</dt><dd><?= sprintf('%02d:00 to %02d:00', OPEN_HOUR, CLOSE_HOUR) ?></dd></div>
+      <div><dt>Loans</dt><dd><?= LOAN_DAYS ?> days, free</dd></div>
+    </dl>
   </section>
 </div>
 

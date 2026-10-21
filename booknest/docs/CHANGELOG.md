@@ -1,5 +1,76 @@
 # Changelog
 
+## 2026-10-21: Paige removed; back to 10 features (Mathew)
+
+The brief allows 10 features, so the help assistant is gone. (A guided tour was built on
+20 October to replace her and removed again the next day for the same reason.)
+
+- Removed `includes/assistant.php`, `process/assistant.php`, `tools/assistant-test.php`, the
+  `assistant_log` table and its seed rows, the admin dashboard panel, her CSS and JavaScript,
+  and her footer link. The phone tab bar now has four tabs: Home, Browse, Rooms, Account.
+- REQUIREMENTS lists features F1 to F10 (FR-01 to FR-43); FR-04 (no rating on cards) and FR-25
+  (the Crescent map) updated to match the site.
+- Tests: Paige's T52 to T58 retired, T90 checks she is gone; e2e **58 of 58**.
+
+## 2026-10-19: "Nocturne Bibliophilia" visual redesign from the Google Stitch mock up (Mathew)
+
+Design only. No page, feature, form, query or rule changed; the backend is untouched.
+
+- **Type:** Noto Serif for headings and Inter for the interface, self-hosted in `assets/fonts/`
+  (SIL Open Font License, licence files included; no font CDN). The two fonts the first screen
+  needs are preloaded in `includes/header.php`.
+- **Colour:** page titles and the wordmark in headline gold `#F3CF8E` with a soft glow (was a
+  gradient fill); calmer background light; panels with a subtler edge.
+- **Components:** eyebrow labels with a glowing dot; primary button gradient with an amber
+  glow; secondary buttons turn gold on hover; new teal outline button; inputs on the raised
+  surface with an amber focus ring; availability shown as tinted status chips; loans count as a
+  bubble on the books icon; Paige's launcher is a quiet pill with gold lettering.
+- **Cards and rows:** 8px covers with a hairline border, lift and scale with an amber halo on
+  hover; cards show title, author and availability (rating stays on the book page and in the
+  featured panel). Row titles have a small amber icon and a "View all" link on the right.
+  Phones show 140px cards.
+- **Home:** the featured book is now a rounded panel (italic quoted hook, cover on the right on
+  wide screens); the three steps sit in one bento strip; the sign in card has a header with an
+  icon; the study room teaser has a stat box and a teal button instead of the room image; the
+  visit panel shows a live status, SGT chip, address and three hour tiles instead of a 7 row
+  table (hours are the same every day).
+- **Footer:** brand column with logo and a one line description.
+- **Phones:** a bottom tab bar (Home, Browse, Rooms, Paige, Account / Sign in) under 1024px.
+- Checks: e2e 64/64, assistant 42/42, html-validate clean, no forbidden technology,
+  Lighthouse home accessibility 100, best practices 100, performance about the same as before
+  the redesign (the infinite "breathing" animation was rebuilt with transform and opacity
+  after it cost 3.5 s of blocking time).
+
+## 2026-10-13: The Crescent, a library map with 50 study rooms (Mathew)
+
+Replaces the first map (three squares with two rooms each, 7 October), which looked like a
+spreadsheet rather than a building.
+
+- **50 study rooms** instead of 6, in four arcs: A Focus pods (20 rooms, 2 seats), B Study rooms
+  (15, 4 seats), C Media rooms (10, 4 seats) and D Project rooms (5, 6 seats). Rooms are named by
+  arc and number, for example `A07`. Two are closed for maintenance in the seed data.
+- **The map** is one inline SVG of a crescent moon shaped building around a "Moon Garden". Each
+  room is a small rounded tile on its arc. `map_arcs()` and `map_position()` in
+  `includes/rooms.php` place them: an arc has a radius and an opening angle, and `cos` / `sin`
+  turn each room's angle into x and y. Inner arcs are shorter, which gives the moon its taper.
+- **Colour by time.** With 50 rooms the useful question is "which rooms are free at 3 pm?", so
+  the map shows every room at one chosen time (`?at=15:00`, a select box beside the map). The
+  states are the same five as the timetable: free, taken, yours, past, closed. Each also differs
+  by outline or symbol, not only by colour, and has a tooltip and screen reader label.
+- **A free room is a link** to `rooms.php?date=..&at=..&room=..&start=..#book`, which opens the
+  booking form filled in. Booking is still three clicks: Study Rooms, a room, Confirm.
+- **Timetable** (the page's required table) now shows one arc at a time, chosen with chips, so
+  it is at most 20 rows instead of 50. The room list in the booking form is grouped by arc.
+- **Data:** 72 generated members join the 8 named demo members so the rooms look used (about 75
+  bookings a day). Loans and queues still use only the named members, so nothing else changed.
+- Admin: the room chart shows the 8 busiest rooms; the open/close list is more compact.
+- No JavaScript was added (the time select reuses the existing auto submit), and no image files.
+- Tests T80 to T84: all 50 rooms drawn, free room links to the form, **rooms drawn as taken
+  match the bookings in the database**, closed room is not a link, timetable per arc, bad
+  address values fall back safely. The suite is now 64 checks, all passing.
+- Lighthouse on the page: accessibility 100, best practices 100; performance 99 desktop, 75 on
+  the slow phone profile (the page now draws 50 rooms and a timetable).
+
 ## 2026-10-02: Borrowing instead of buying (Phase 1 of the borrowing brief)
 
 Why: our course theme is *Online Library*. Selling books did not fit it, so the core transaction is

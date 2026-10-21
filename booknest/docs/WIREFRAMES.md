@@ -144,18 +144,27 @@ LAST PAGE: "End of sample" ▒ cover  [Borrow this book]  [Back to book]
 +--------------------------------------------------------------------------------+
 | h1 Study rooms       Rules: up to 60 min a day · 7 days ahead · You have 60 min left |
 | Dates: [Today] [Tue] [Wed] [Thu] [Fri] [Sat] [Sun] [Mon]   (date)[Show]        |
+| THE CRESCENT (library map, 13 Oct)            | LIBRARY MAP panel               |
+|        . - ~ ~ - .                             | Show the rooms at [15:00 v]     |
+|     .  [01][02][03]  ` .      A B C D = arcs   | 36 of 50 rooms are free         |
+|    . [01][02]  [04]     \    small tiles =     | key: Free Taken Yours Past Closed|
+|   ( [01]   garden        )   rooms, coloured   | A Focus pods, 20 rooms, 2 seats |
+|    ` [02]  ( moon )     /    by state at the   | B Study rooms ...               |
+|     `  [20][19][18]  . '     chosen time;      |                                 |
+|        ` - ~ ~ - '           free = a link     |                                 |
+| TIMETABLE: Arc A   chips [Arc A][Arc B][Arc C][Arc D]  (one arc at a time)     |
 | Legend: ○ Free  ● Taken  ★ Yours  – Past                                        |
 | +------------+------+------+------+------+----                                 |
 | | Room       |10:00 |10:30 |11:00 |11:30 | ...  (caption: availability table)  |
-| | Folio (2)  | Free | Taken| Taken| Free |                                     |
-| | Quill (2)  | Past | Free | Yours| Free |                                     |
+| | A01 (2)    | Free | Taken| Taken| Free |                                     |
+| | A02 (2)    | Past | Free | Yours| Free |                                     |
 | +------------+------+------+------+------+----   scrolls inside wrapper        |
 |                                                                                |
 | #book  BOOK A ROOM                                                             |
 | [Room v] (date) [Start v] [Duration 60 v] (Purpose) [Confirm booking]          |
 | visitor: inline SIGN IN form instead of Confirm                                |
 +--------------------------------------------------------------------------------+
-| Room cards: ▒ plan  Folio · 2 seats · Level 2 · whiteboard, power              |
+| Arc cards: ▒ plan  Arc A · Focus pods · 20 rooms · 2 seats each               |
 +--------------------------------------------------------------------------------+
 MOBILE: date chips scroll; table wrapper scrolls with sticky room column.
 ```
@@ -167,7 +176,7 @@ MOBILE: date chips scroll; table wrapper scrolls with sticky room column.
 | h1 Hello, Aisha                         [Add a book] [Admin] [Sign out]        |
 | tiles: On loan 2 | Fees owed S$2.00 | Waiting for 1 | Minutes left 60 | Shelf 4 |
 +--------------------------------------------------------------------------------+
-| Upcoming bookings: Folio · Tue 29 Sep · 14:00-15:00   [Cancel] -> [Yes, cancel]|
+| Upcoming bookings: A01 · Tue 29 Sep · 14:00-15:00     [Cancel] -> [Yes, cancel]|
 | Your loans: ▒ The Silent Patient · 4 days overdue, S$2.00 so far   [Return]   |
 |             ▒ Atomic Habits · Due back in 9 days                    [Return]   |
 | Waiting for: ▒ Fourth Wing · You are #2 in line                [Leave queue]   |
@@ -220,6 +229,6 @@ MOBILE: illustration becomes a short banner above the tabs.
 +--------------------------------------------------------------------------------+
 | Pending books: ▒ title · by member · [Approve] [Reject]                        |
 | Books table: serial | title | value( ) | copies( ) | on loan | flags | [Save]  |
-| Rooms: Folio · open [Close room]                                               |
+| Rooms: A01 · open [Close room]  (50 rooms, compact grid)                       |
 +--------------------------------------------------------------------------------+
 ```

@@ -93,7 +93,7 @@ Mapped to features F1 to F10 of the project brief.
 | FR-01 | The home page shows a featured book billboard with cover, hook, live availability, "Borrow it free" and "Read a sample". |
 | FR-02 | The home page shows horizontal rows for New arrivals, Staff picks, Recently viewed (if any) and each category, generated from the database. |
 | FR-03 | Rows scroll by touch swipe and by previous/next buttons that also work with the keyboard. |
-| FR-04 | Cover cards show title, author, rating and live availability (never a price), with a quick info overlay on hover and on focus. |
+| FR-04 | Cover cards show title, author and live availability (never a price), with a quick info overlay on hover and on focus. The rating is shown on the book page and the featured panel. |
 | FR-05 | Visitors see a sign in card on the home page; members see a personal welcome with shortcuts. |
 | FR-06 | The home page shows opening hours with a live "Open now" or "Closed" status and a study room teaser. |
 
@@ -142,7 +142,7 @@ an online library (see `CHANGELOG.md`). Constants live in `config/config.php`.
 
 | ID | Requirement |
 |---|---|
-| FR-25 | The rooms page shows an availability table (rooms by 30 minute slots) for a chosen date up to 7 days ahead. |
+| FR-25 | The rooms page shows a map of the library (The Crescent, 50 rooms in four arcs) coloured by status at a chosen time, and an availability table (one arc's rooms by 30 minute slots), for a chosen date up to 7 days ahead. |
 | FR-26 | Each cell shows Free, Taken, Yours, Past or Closed with text and icon. |
 | FR-27 | Clicking a free cell pre-fills the booking form; members confirm with a duration of 30 or 60 minutes. |
 | FR-28 | The server rejects bookings over 60 minutes, over 60 minutes per user per day, overlapping, in the past, after closing or more than 7 days ahead. |
@@ -174,14 +174,6 @@ an online library (see `CHANGELOG.md`). Constants live in `config/config.php`.
 | FR-39 | Admins can edit copies owned (never below the copies on loan or held for the queue), replacement value, featured and staff pick flags, and delete books that have never been borrowed. Added copies are offered to the queue at once. |
 | FR-40 | Admins can open or close study rooms. |
 | FR-41 | Admins see analytics built with GROUP BY and aggregates: books on loan, overdue loans, late fees outstanding, people in queues, most borrowed books, loans by category, longest queues, overdue loans with fees, new loans per day (14 days), bookings per room, busiest hours, members. |
-
-### F11 Help assistant
-
-| ID | Requirement |
-|---|---|
-| FR-44 | Every page offers a help assistant (Paige) that answers typed questions and quick question buttons about borrowing, loans, late fees, queues, collection, study rooms, opening hours, accounts and books. |
-| FR-45 | The assistant states that it is automated, never shows a loan or booking to anyone but its owner, and offers staff contact when it cannot answer. |
-| FR-46 | Every question is logged with its topic so that staff can see, in the admin dashboard, what people ask and what was not answered. |
 
 ### F10 Cookies and request data
 

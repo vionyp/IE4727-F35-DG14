@@ -49,10 +49,6 @@ that nobody has on loan or in a queue, and sets their copies through the admin f
 | T04 | FR-11 | Serial lookup, member | Aisha searches `BNT-000123` | Panel with availability, copies, times borrowed, added by | E2E | Panel shown with all fields | Pass |
 | T37 | FR-41 | Analytics accuracy | Dashboard "Late fees outstanding" vs a manual `SUM` over `loans` | Same value | E2E | S$12.50 on both (after the test loans) | Pass |
 | T39b | FR-39 | Delete protection | Admin deletes a book that has been borrowed | Refused, book kept | E2E | "...has been borrowed before, so it is kept for the loan records." | Pass |
-| T53 | FR-44 | Quick question | "Late fees" button | Fee answer, earlier messages kept | E2E | "Returning late costs S$0.50..." shown, conversation kept | Pass |
-| T54 | FR-45 | Loan privacy | Visitor asks "what do I have on loan" | Asked to sign in, no loan data | E2E | "I can only show loans to the member they belong to." | Pass |
-| T55 | FR-45 | Own loans | Aisha asks the same | Her loans with due date and fee | E2E | "Atomic Habits, due back ..." and "4 days overdue (S$2.00 so far)" | Pass |
-| T59 | FR-44 | Understanding | 42 questions in `tools/assistant-test.php` (loans, fees, queue, return, collection, borrow added) | Each lands on the expected topic | Script | First run 41 of 42: "how long can I keep a book" not understood; pattern added; now 42 of 42 | Pass after fix |
 | T39 | AR-U1 | Three Click Rule for borrowing | Borrow, join a queue, return | 3, 2 and 3 clicks | Walk-through of the built pages (screenshots) | Book page shows Borrow; `borrow.php` has today chosen and one Confirm button; Join the queue and Return (with confirm) as in `STORYBOARD.md` | Pass |
 | T45 | AR-B2 | Page count | Top level `.php` pages | Still 10 | Code search | index, catalogue, book, read, borrow, rooms, account, sign-in, add-book, admin = 10 | Pass |
 | T44 | AR-B1 | Forbidden technology | Same patterns as before, over all PHP and JS | No matches | Code search | 0 matches | Pass |
@@ -78,20 +74,25 @@ to the rating. Both were fixed and re-checked.
 | T50 | all | Full regression | `tools/e2e-test.php` | 44 of 44 | E2E | 44 of 44 passed, 0 PHP errors, no test files left behind | Pass |
 | T51 | AR-R4 | Performance after the visual redesign | Lighthouse 12, desktop and phone profiles | No regression in accessibility; performance stays high | Lighthouse | Accessibility 100 and Best Practices 100 on all pages tested. **Desktop profile:** Home 96, Browse 98, Book 100, Reader 98, Study Rooms 99. **Slow phone profile:** Book 93, Reader 93, Browse about 75, Home about 65. The phone figures for Home and Browse are lower than before the real covers (96 and 99) because a sharp phone screen downloads the large cover files over a simulated slow network | Pass on desktop; phone noted |
 
-### Paige, the help assistant (1 October 2026)
+### Paige, the help assistant (1 October 2026, removed 20 October 2026)
+
+Paige was removed (team decision: the brief allows 10 features). Her checks T52 to T59 and
+`tools/assistant-test.php` were retired with her, and T90 checks that she is really gone.
+
+The full end to end suite is now **51 checks, all passing**.
+
+### The Crescent library map (13 October 2026)
 
 | ID | Req | Feature | Input data | Expected output | Method | Actual result | Result |
 |---|---|---|---|---|---|---|---|
-| T52 | FR-44 | Typed question | "What time do you close?" | Hours answer in the open chat panel | E2E | "We are open every day, 10:00 to 21:00..." shown, panel open | Pass |
-| T53 | FR-44 | Quick question button | "Delivery fees" | Delivery answer, earlier messages kept | E2E | Answer shown, conversation kept | Pass |
-| T54 | FR-45 | Order privacy | Visitor asks about another person's order number | Refused, no details | E2E | "I can only show an order to the person who placed it" | Pass |
-| T55 | FR-45 | Own order | Member asks "where is my order" | Their latest order summary | E2E | "Order #.. was placed on .." shown | Pass |
-| T56 | AR-S2 | Script injection and unknown question | `<script>alert(1)</script> can I bring my dog` | Shown as text, logged as unanswered | E2E | Escaped; one row with `answered = 0` | Pass |
-| T57 | AR-S3 | CSRF | Post without token | Rejected, nothing logged | E2E | Log row count unchanged | Pass |
-| T58 | FR-46 | Logging | Five questions | Five new rows in `assistant_log` | E2E | 5 rows | Pass |
-| T59 | FR-44 | Understanding | 40 realistic questions (`tools/assistant-test.php`) | Each lands on the expected topic | Script | First run 37 of 39: "any books about money?" not understood and "gift cards" mistaken for a payment card; both patterns fixed; now 40 of 40 | Pass after fix |
+| T80 | FR-25 | Map drawn and linked | `rooms.php?date=+2 days&at=16:00` | All rooms drawn; a free room links to the pre-filled booking form | E2E | 50 of 50 rooms drawn; link carries date, room and start 16:00; room highlighted on arrival | Pass |
+| T81 | FR-26 | Map agrees with data | Same page | Rooms drawn as taken = rooms booked at 16:00 in the database | E2E plus SQL | 9 drawn as taken, 9 booked. The first version of this test used a day with no bookings (0 = 0), which proved nothing, so it was moved to a day with bookings | Pass |
+| T82 | FR-26 | Closed room | Room A06 closed by staff | Drawn as closed, not a link | E2E | Closed tile, no link | Pass |
+| T83 | FR-25 | Timetable per arc | `arc=D` | Only Arc D's 5 rooms | E2E | 5 rows, heading "Timetable: Arc D" | Pass |
+| T84 | AR-S1 | Bad address values | `at=99:99&arc=Z` | Falls back to defaults, no error | E2E | HTTP 200, Arc A shown | Pass |
+| T85 | AR-A3 | Accessibility and validity | Lighthouse and HTML validator on the page | 100 and no errors | Lighthouse, html-validate | Accessibility 100, best practices 100, 0 HTML errors; performance 99 desktop, 75 slow phone | Pass |
 
-The full end to end suite is now **51 checks, all passing**.
+Room names in older results below ("Folio" and so on) are the six rooms that existed before the map.
 
 The detailed results below were recorded on 28 September 2026 with the first catalogue; book
 titles, order numbers and amounts in them refer to that data. T04, T09 to T14, T28, T37, T39b and
@@ -219,3 +220,11 @@ which has not been measured yet).
 
 Study Rooms scores lowest on performance because its 132 cell table is large for Lighthouse's
 simulated mid range phone. It is still fast on a real laptop.
+
+### Paige removed (21 October 2026)
+
+| ID | Req | Feature | Input data | Expected output | Method | Actual result | Result |
+|---|---|---|---|---|---|---|---|
+| T90 | none | Paige removed | POST to `process/assistant.php`; page markup; tables | 404, no assistant markup, no `assistant_log` table | E2E | HTTP 404, none, none | Pass |
+
+The full end to end suite is now **58 checks, all passing** (64, minus Paige's 7, plus T90).

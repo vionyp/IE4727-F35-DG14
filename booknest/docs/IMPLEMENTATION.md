@@ -24,7 +24,7 @@ booknest/
   process/*.php                  10 form endpoints: validate, write, redirect
   includes/bootstrap.php         loaded first by every request
   includes/header.php, footer.php  one shared layout
-  includes/{db,functions,auth,csrf,flash,loans,mail,rooms,covers,views,assistant}.php
+  includes/{db,functions,auth,csrf,flash,loans,mail,rooms,covers,views}.php
   config/config.php              every setting in one place
   assets/css/{base,components,pages,print}.css
   assets/js/{nav,rows,search-filter,reader,rooms,forms}.js
@@ -52,14 +52,14 @@ booknest/
 | `$_GET` | Search `q`, `category`, `sort`; `book.php?id=`, `borrow.php?id=`; room `date`, `room`, `start`; serial lookup; `account.php?loan=` to highlight a new loan |
 | `$_POST` | Every form; always read through `input()` / `input_int()` which trim, type check and cap length |
 | `$_COOKIE` | `bn_recent` (recently viewed ids, validated as integers), `bn_email` (remember my email), `bn_session` |
-| `$_SESSION` | Signed in user, CSRF token, flash messages, kept form values, Paige's conversation, idle timer |
+| `$_SESSION` | Signed in user, CSRF token, flash messages, kept form values, idle timer |
 | `$_SERVER` | `REQUEST_METHOD` (POST only endpoints), `SCRIPT_NAME` (active navigation), `REQUEST_URI` (return after sign in), `HTTP_REFERER` (safe return after an action, same host only), `HTTP_HOST`, `REMOTE_ADDR` (logs) |
 
 ## 3. Database
 
 Nine InnoDB tables with foreign keys and indexes on every searched or joined column
 (`sql/schema.sql`). The course guide suggests 3 to 4 tables; the features need 9
-(users, categories, books, loans, book_queue, study_rooms, room_bookings, shelf, assistant_log).
+(users, categories, books, loans, book_queue, study_rooms, room_bookings, shelf).
 `orders` and `order_items` were replaced by `loans` and `book_queue` on 2 October 2026.
 `books.stock` now means copies the library owns; copies on the shelf are always worked out live
 (owned, minus open loans, minus copies held for the queue) and never stored. `books.price` is kept
@@ -183,26 +183,6 @@ same instant and confirm exactly one wins.
   buttons are hidden until JavaScript is ready, and every form works without it.
 - **Print stylesheet** hides navigation and buttons so confirmations print cleanly.
 
-## 7b. Paige, the help assistant
-
-Paige is a rule based assistant, deliberately built without AI services so the Base Version
-stays inside the course rules. `assistant_reply()` lower-cases the message and tests it against
-ordered regular expressions, most specific first (for example "how do I borrow" is checked before
-"my loans", so a how-to question is not mistaken for a question about the member's own loans). Each topic has a
-handler: static topics return help text built from `config.php` constants (fees, hours, limits),
-and data topics query the database with prepared statements.
-
-- **Privacy:** loans, fees and queue places are only ever read for the signed in member. A visitor
-  who asks is told to sign in, and no loan data is shown (test T54).
-- **State without AJAX:** the form posts to `process/assistant.php`, which appends the question
-  and answer to `$_SESSION['assistant']` (last 24 messages), logs the question, and redirects
-  back with Post/Redirect/Get. The widget is a `<details>` element, so it opens without
-  JavaScript; `nav.js` only restores scroll position, scrolls the log and handles Escape.
-- **Honest fallback:** if nothing matches, she says so, offers staff contact, and the question
-  is stored with `answered = 0` for the admin dashboard.
-- **Accessibility:** the conversation is a `role="log"` live region, each bubble has hidden
-  "You said" / "Paige said" text, and the input has a label.
-
 ## 8. Accessibility
 
 Skip link; `header`, `nav`, `main`, `footer` landmarks; one `h1` per page; visible labels on
@@ -254,7 +234,6 @@ confirmation, booking cancellation.
 | FR-31 to FR-34 | F7 Accounts | `sign-in.php`, `account.php`, `process/login.php`, `register.php`, `logout.php`, `shelf.php` | T15 to T18, T38 |
 | FR-35 to FR-37 | F8 Add book | `add-book.php`, `process/add-book.php`, `covers.php` | T34, T35 |
 | FR-38 to FR-41 | F9 Admin | `admin.php`, `process/admin-action.php` | T36, T37, T39b |
-| FR-44 to FR-46 | F11 Help assistant | `includes/assistant.php`, `process/assistant.php`, `admin.php`, `tools/assistant-test.php` | T52 to T59 |
 | FR-42, FR-43 | F10 Cookies | `functions.php`, `process/login.php` | T19b, T20 |
 | AR-S1 to AR-S8 | Security | `csrf.php`, `auth.php`, `db.php`, `.htaccess` | T02, T17, T18, T28, T31 to T33b |
 | AR-A1 to AR-A6 | Accessibility | all CSS, `forms.js`, `reader.js` | T40, T42, T43, T43b |

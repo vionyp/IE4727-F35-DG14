@@ -1,5 +1,5 @@
 <?php
-// Study rooms: the availability table (rooms by half hour slots) and the booking form.
+// Study rooms: the Crescent map, the availability table (rooms by half hour slots) and the booking form.
 require __DIR__ . '/includes/bootstrap.php';
 
 $user = current_user();
@@ -36,6 +36,49 @@ $labels = ['free' => 'Free', 'taken' => 'Taken', 'yours' => 'Yours', 'past' => '
 $symbols = ['free' => '○', 'taken' => '●', 'yours' => '★', 'past' => '–', 'closed' => '×'];
 $returnHere = url('rooms.php?date=' . $date . ($preRoom ? '&room=' . $preRoom : '') . ($preStart ? '&start=' . $preStart : '') . '#book');
 
+// ---- The Crescent map ---------------------------------------------------------------------
+// The map shows every room at ONE time of day, chosen with ?at=HH:MM. Without it we use the
+// start time the visitor already picked, or today's next slot, or 14:00 on a future day.
+$at = input($_GET, 'at', 5) ?: $preStart;
+if (!in_array($at, $slots, true)) {
+    $at = '14:00';
+    if ($date === $dates[0]) {
+        $nowMin = (int) date('G') * 60 + (int) date('i');
+        $later = array_filter($slots, fn($slot) => to_minutes($slot) > $nowMin);
+        $at = $later ? reset($later) : end($slots);
+    }
+}
+
+// Group the rooms by arc. The "floor" column of a room holds its arc, for example "Arc A".
+$arcs = map_arcs();
+$byArc = [];
+foreach ($rooms as $room) {
+    $byArc[$room['floor']][] = $room;
+}
+
+// How many rooms are in each state at the chosen time, for example ['free' => 31, 'taken' => 17].
+$atCounts = array_count_values(array_map(fn($room) => $grid[$room['id']][$at], $rooms));
+
+// The timetable shows one arc at a time: the one asked for, or the picked room's, or the first.
+$arc = 'Arc ' . strtoupper(input($_GET, 'arc', 1));
+if (!isset($byArc[$arc])) {
+    $arc = array_key_first($byArc);
+    foreach ($rooms as $room) {
+        if ((int) $room['id'] === $preRoom) {
+            $arc = $room['floor'];
+        }
+    }
+}
+$tableRooms = $byArc[$arc] ?? [];
+$arcFree = 0;
+foreach ($tableRooms as $room) {
+    $arcFree += count(array_keys($grid[$room['id']], 'free'));
+}
+
+// Builds a link to this page that keeps the chosen date, time and arc, with some values changed.
+$link = fn(array $change = [], string $hash = '') => url('rooms.php?'
+    . http_build_query(array_merge(['date' => $date, 'at' => $at, 'arc' => substr($arc, -1)], $change)) . $hash);
+
 $page_title = 'Study Rooms';
 $page_desc = 'See which study rooms are free and book one for up to an hour a day.';
 $body_class = 'page-rooms';
@@ -47,7 +90,7 @@ require __DIR__ . '/includes/header.php';
   <header class="page-head rooms-head">
     <div>
       <h1>Study rooms</h1>
-      <p class="lede">Six quiet rooms for two to six people. Pick a free slot in the table, choose how long, and confirm.</p>
+      <p class="lede"><?= count($rooms) ?> quiet rooms in four arcs around the Moon Garden. Pick a time, choose a free room on the map, and confirm.</p>
     </div>
     <ul class="rules" role="list" aria-label="Booking rules">
       <li><?= icon('clock', 18) ?> Up to <?= MAX_BOOKING_MINUTES ?> minutes per member per day</li>
@@ -62,7 +105,7 @@ require __DIR__ . '/includes/header.php';
   <nav class="date-picker" aria-label="Choose a date">
     <div class="chips">
       <?php foreach ($dates as $i => $d): ?>
-      <a class="chip date-chip" href="<?= e(url('rooms.php?date=' . $d)) ?>"<?= $d === $date ? ' aria-current="page"' : '' ?>>
+      <a class="chip date-chip" href="<?= e($link(['date' => $d])) ?>"<?= $d === $date ? ' aria-current="page"' : '' ?>>
         <span><?= $i === 0 ? 'Today' : ($i === 1 ? 'Tomorrow' : e(date('D', strtotime($d)))) ?></span>
         <small><?= e(date('j M', strtotime($d))) ?></small>
       </a>
@@ -75,16 +118,122 @@ require __DIR__ . '/includes/header.php';
     </form>
   </nav>
 
+  <section class="moon" aria-labelledby="map-title">
+    <div class="moon-map">
+      <svg viewBox="0 0 660 620" role="group" aria-labelledby="map-title map-desc">
+        <desc id="map-desc">Plan of the library, a crescent shaped building. <?= count($rooms) ?> study rooms sit on four arcs around a garden. Free rooms are links.</desc>
+        <defs>
+          <radialGradient id="moon-fill" cx="30%" cy="35%" r="80%">
+            <stop offset="0" stop-color="#232A36"/><stop offset="1" stop-color="#12161D"/>
+          </radialGradient>
+          <linearGradient id="moon-edge" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#E5A93D"/><stop offset="1" stop-color="#3FB6A8"/>
+          </linearGradient>
+        </defs>
+
+        <!-- a few stars, then the crescent: a big circle with a smaller circle bitten out of it -->
+        <g class="moon-stars" aria-hidden="true">
+          <circle cx="560" cy="60" r="2"/><circle cx="612" cy="150" r="1.5"/><circle cx="590" cy="470" r="2"/>
+          <circle cx="636" cy="330" r="1.5"/><circle cx="540" cy="585" r="1.5"/><circle cx="30" cy="40" r="1.5"/><circle cx="24" cy="580" r="2"/>
+        </g>
+        <path class="moon-body" d="M500 75.1 A290 290 0 1 0 500 544.9 A236 236 0 1 1 500 75.1 Z"/>
+        <g class="moon-garden" aria-hidden="true">
+          <circle cx="455" cy="310" r="96"/>
+          <text x="455" y="304">Moon</text><text x="455" y="322">Garden</text>
+          <text class="moon-entrance" x="520" y="566">Entrance</text>
+        </g>
+
+        <?php foreach ($arcs as $arcName => $a): $list = $byArc[$arcName] ?? []; ?>
+        <?php
+          // The arc's letter, drawn just past its first room (half a tile plus a small gap further round).
+          $gap = rad2deg(($a['w'] / 2 + 13) / $a['radius']);
+          $tag = map_position(['radius' => $a['radius'], 'half_span' => $a['half_span'] + $gap], 0, 2);
+        ?>
+        <text class="moon-arc-letter" x="<?= $tag['x'] ?>" y="<?= $tag['y'] ?>" aria-hidden="true"><?= e(substr($arcName, -1)) ?></text>
+        <?php foreach ($list as $i => $r): ?>
+        <?php
+          $pos = map_position($a, $i, count($list));     // where this room sits on its arc
+          $state = $grid[$r['id']][$at];                 // free, taken, yours, past or closed
+          $number = substr($r['name'], 1);               // "A07" is shown as "07"
+          $mark = ['yours' => '★', 'closed' => '×'][$state] ?? $number;
+          $about = $r['name'] . ', ' . (int) $r['capacity'] . ' seats, ' . strtolower($labels[$state]) . ' at ' . $at;
+          $class = 'mroom is-' . $state . ($preRoom === (int) $r['id'] ? ' is-selected' : '');
+          // The tile is drawn flat, centred on the spot, then turned to follow the curve.
+          $rect = '<rect x="' . ($pos['x'] - $a['w'] / 2) . '" y="' . ($pos['y'] - $a['h'] / 2) . '" width="' . $a['w'] . '" height="' . $a['h']
+              . '" rx="5" transform="rotate(' . ($pos['angle'] + 90) . ' ' . $pos['x'] . ' ' . $pos['y'] . ')"/>';
+        ?>
+        <?php if ($state === 'free'): ?>
+        <a class="<?= $class ?>" href="<?= e($link(['room' => $r['id'], 'start' => $at, 'arc' => substr($arcName, -1)], '#book')) ?>" aria-label="<?= e($about) ?>. Book it.">
+          <title><?= e($about) ?>. Select to book.</title><?= $rect ?><text x="<?= $pos['x'] ?>" y="<?= $pos['y'] ?>"><?= e($mark) ?></text>
+        </a>
+        <?php else: ?>
+        <g class="<?= $class ?>" role="img" aria-label="<?= e($about) ?>">
+          <title><?= e($about) ?></title><?= $rect ?><text x="<?= $pos['x'] ?>" y="<?= $pos['y'] ?>"><?= e($mark) ?></text>
+        </g>
+        <?php endif; ?>
+        <?php endforeach; ?>
+        <?php endforeach; ?>
+      </svg>
+    </div>
+
+    <aside class="moon-panel panel">
+      <p class="eyebrow">The Crescent</p>
+      <h2 id="map-title">Library map</h2>
+      <p class="muted"><?= e(long_date($date)) ?></p>
+
+      <form class="moon-time" action="<?= e(url('rooms.php')) ?>" method="get">
+        <input type="hidden" name="date" value="<?= e($date) ?>">
+        <input type="hidden" name="arc" value="<?= e(substr($arc, -1)) ?>">
+        <div class="field">
+          <label for="map-at">Show the rooms at</label>
+          <select id="map-at" name="at" data-autosubmit>
+            <?php foreach ($slots as $slot): ?>
+            <option value="<?= e($slot) ?>"<?= $slot === $at ? ' selected' : '' ?>><?= e($slot) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+        <button class="btn btn-secondary" type="submit" data-autosubmit-btn>Show</button>
+      </form>
+
+      <p class="moon-stat"><strong><?= (int) ($atCounts['free'] ?? 0) ?></strong> of <?= count($rooms) ?> rooms are free at <?= e($at) ?></p>
+      <?php if (($atCounts['past'] ?? 0) > 0): ?>
+      <p class="notice"><?= e($at) ?> has already passed today. Choose a later time above, or another day.</p>
+      <?php endif; ?>
+
+      <ul class="moon-legend" role="list" aria-label="Map key">
+        <?php foreach ($labels as $key => $label): ?>
+        <li><span class="moon-swatch is-<?= $key ?>" aria-hidden="true"><?= ['yours' => '★', 'closed' => '×'][$key] ?? '' ?></span><?= e($label) ?> <span class="muted">(<?= (int) ($atCounts[$key] ?? 0) ?>)</span></li>
+        <?php endforeach; ?>
+      </ul>
+
+      <ul class="moon-arcs" role="list" aria-label="The four arcs">
+        <?php foreach ($arcs as $arcName => $a): $list = $byArc[$arcName] ?? []; ?>
+        <li><strong><?= e(substr($arcName, -1)) ?></strong> <?= e($a['title']) ?> <span class="muted">· <?= count($list) ?> rooms · <?= (int) ($list[0]['capacity'] ?? 0) ?> seats</span></li>
+        <?php endforeach; ?>
+      </ul>
+      <p class="small muted">Select a free room to book it from <?= e($at) ?>. Hover over a room to see its name and size.</p>
+    </aside>
+  </section>
+
+  <div class="section-head" id="timetable">
+    <h2>Timetable: <?= e($arc) ?>, <?= e($arcs[$arc]['title'] ?? '') ?></h2>
+    <nav class="chips" aria-label="Choose an arc for the timetable">
+      <?php foreach ($arcs as $arcName => $a): ?>
+      <a class="chip chip-sm<?= $arcName === $arc ? ' is-active' : '' ?>" href="<?= e($link(['arc' => substr($arcName, -1)], '#timetable')) ?>"<?= $arcName === $arc ? ' aria-current="true"' : '' ?>><?= e($arcName) ?></a>
+      <?php endforeach; ?>
+    </nav>
+  </div>
+
   <div class="legend" aria-hidden="true">
     <?php foreach ($labels as $key => $label): ?>
     <span class="legend-item"><span class="slot slot-<?= $key ?>"><?= $symbols[$key] ?></span> <?= e($label) ?></span>
     <?php endforeach; ?>
-    <span class="legend-count"><?= $freeCount ?> free slots on <?= e(short_date($date)) ?></span>
+    <span class="legend-count"><?= $arcFree ?> free slots in <?= e($arc) ?> on <?= e(short_date($date)) ?></span>
   </div>
 
   <div class="table-wrap availability-wrap" tabindex="0" role="region" aria-labelledby="avail-caption">
     <table class="availability" data-availability>
-      <caption id="avail-caption">Study room availability for <?= e(long_date($date)) ?>. Each column is a 30 minute slot starting at the time shown. Select a free slot to book it.</caption>
+      <caption id="avail-caption">Availability of the rooms in <?= e($arc) ?> for <?= e(long_date($date)) ?>. Each column is a 30 minute slot starting at the time shown. Select a free slot to book it.</caption>
       <thead>
         <tr>
           <th scope="col" class="room-col">Room</th>
@@ -94,13 +243,13 @@ require __DIR__ . '/includes/header.php';
         </tr>
       </thead>
       <tbody>
-        <?php foreach ($rooms as $room): ?>
+        <?php foreach ($tableRooms as $room): ?>
         <tr>
           <th scope="row" class="room-col"><span class="room-name"><?= e($room['name']) ?></span><span class="room-cap"><?= (int) $room['capacity'] ?> seats</span></th>
           <?php foreach ($slots as $s): $st = $grid[$room['id']][$s]; ?>
           <td>
             <?php if ($st === 'free'): ?>
-            <a class="slot slot-free" href="<?= e(url('rooms.php?date=' . $date . '&room=' . $room['id'] . '&start=' . $s . '#book')) ?>" data-room="<?= (int) $room['id'] ?>" data-start="<?= e($s) ?>" aria-label="Free, book <?= e($room['name']) ?> at <?= e($s) ?>"><span aria-hidden="true"><?= $symbols['free'] ?></span> Free</a>
+            <a class="slot slot-free" href="<?= e($link(['room' => $room['id'], 'start' => $s, 'at' => $s], '#book')) ?>" data-room="<?= (int) $room['id'] ?>" data-start="<?= e($s) ?>" aria-label="Free, book <?= e($room['name']) ?> at <?= e($s) ?>"><span aria-hidden="true"><?= $symbols['free'] ?></span> Free</a>
             <?php else: ?>
             <span class="slot slot-<?= $st ?>"><span aria-hidden="true"><?= $symbols[$st] ?></span> <?= e($labels[$st]) ?></span>
             <?php endif; ?>
@@ -125,8 +274,12 @@ require __DIR__ . '/includes/header.php';
           <label for="bk-room">Room</label>
           <select id="bk-room" name="room_id" required<?= field_attrs('booking', 'room') ?>>
             <option value="">Choose a room</option>
-            <?php foreach ($rooms as $room): ?>
-            <option value="<?= (int) $room['id'] ?>"<?= $preRoom === (int) $room['id'] ? ' selected' : '' ?><?= $room['is_active'] ? '' : ' disabled' ?>><?= e($room['name']) ?> · <?= (int) $room['capacity'] ?> seats<?= $room['is_active'] ? '' : ' (closed)' ?></option>
+            <?php foreach ($byArc as $arcName => $list): ?>
+            <optgroup label="<?= e($arcName . ', ' . ($arcs[$arcName]['title'] ?? '')) ?>">
+              <?php foreach ($list as $room): ?>
+              <option value="<?= (int) $room['id'] ?>"<?= $preRoom === (int) $room['id'] ? ' selected' : '' ?><?= $room['is_active'] ? '' : ' disabled' ?>><?= e($room['name']) ?> · <?= (int) $room['capacity'] ?> seats<?= $room['is_active'] ? '' : ' (closed)' ?></option>
+              <?php endforeach; ?>
+            </optgroup>
             <?php endforeach; ?>
           </select>
           <?= field_error_html('booking', 'room') ?>
@@ -191,15 +344,16 @@ require __DIR__ . '/includes/header.php';
   </section>
 
   <section class="section-tight" aria-labelledby="rooms-title">
-    <h2 id="rooms-title" class="section-title">The rooms</h2>
+    <h2 id="rooms-title" class="section-title">The four arcs</h2>
     <ul class="room-cards" role="list">
-      <?php foreach ($rooms as $room): ?>
+      <?php foreach ($arcs as $arcName => $a): $list = $byArc[$arcName] ?? []; if (!$list) { continue; } ?>
+      <?php $freeNow = count(array_filter($list, fn($room) => $grid[$room['id']][$at] === 'free')); ?>
       <li class="room-card">
-        <img src="<?= e(url('assets/' . $room['image_path'])) ?>" alt="Floor plan of <?= e($room['name']) ?>: a table with <?= (int) $room['capacity'] ?> chairs" width="480" height="300" loading="lazy">
+        <img src="<?= e(url('assets/' . $list[0]['image_path'])) ?>" alt="Floor plan of a room in <?= e($arcName) ?>: a table with <?= (int) $list[0]['capacity'] ?> chairs" width="480" height="300" loading="lazy">
         <div class="room-card-body">
-          <h3><?= e($room['name']) ?> <span class="pill <?= $room['is_active'] ? 'is-in' : 'is-out' ?>"><?= $room['is_active'] ? 'Open' : 'Closed' ?></span></h3>
-          <p class="muted"><?= (int) $room['capacity'] ?> seats · <?= e($room['floor']) ?></p>
-          <p class="small"><?= e(ucfirst($room['features'])) ?></p>
+          <h3><?= e($arcName) ?> <span class="pill is-in"><?= $freeNow ?> free at <?= e($at) ?></span></h3>
+          <p class="muted"><?= e($a['title']) ?> · <?= count($list) ?> rooms · <?= (int) $list[0]['capacity'] ?> seats each</p>
+          <p class="small"><?= e(ucfirst($list[0]['features'])) ?></p>
         </div>
       </li>
       <?php endforeach; ?>
