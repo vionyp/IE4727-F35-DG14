@@ -1,5 +1,5 @@
 <?php
-// Lending actions for members: borrow a book, join or leave a queue, return a loan.
+// Lending actions for members: borrow a book, join or leave a queue, return or renew a loan.
 // The rules live in includes/loans.php; this endpoint validates the request, calls them and redirects.
 require __DIR__ . '/../includes/bootstrap.php';
 require_post();
@@ -52,6 +52,15 @@ switch ($action) {
                 : 'Thank you for bringing it back on time.'));
         }
         redirect('account.php#loans');
+
+    case 'renew':
+        [$problem, $loan] = renew_loan($user, input_int($_POST, 'loan_id'));
+        if ($problem) {
+            flash('error', $problem);
+            redirect('account.php#loans');
+        }
+        flash('success', 'Renewed ' . $loan['title'] . '. It is now due back on ' . long_date($loan['due_date']) . '. A confirmation email is on its way.');
+        redirect('account.php?loan=' . (int) $loan['id'] . '#loans');
 
     default:
         flash('error', 'Unknown action.');

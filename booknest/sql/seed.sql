@@ -2944,12 +2944,13 @@ INSERT INTO shelf (user_id, book_id, added_at) VALUES
   (3, 14, NOW() - INTERVAL 5 DAY),
   (4, 2, NOW() - INTERVAL 2 DAY);
 
--- Budy (budy@gmail.com / budy123!): overdue loans, a loan due today, ongoing loans and a paid late return.
+-- Budy (budy@gmail.com / budy123!): overdue loans, a loan due today, ongoing loans, a paid late return and an unpaid one.
 INSERT INTO users (id, full_name, email, password_hash, role, created_at) VALUES
   (82, 'budy', 'budy@gmail.com', '$2y$10$ijs9JRpA5TOzTdi8iwD9heYbRnkPyemxp589GVaaSyMJ9L5Z.d83q', 'member', NOW() - INTERVAL 60 DAY);
 
 INSERT INTO loans (user_id, book_id, collection_date, due_date, returned_date, status, fee_cleared_at, created_at) VALUES
   (82, 41, CURDATE() - INTERVAL 57 DAY, CURDATE() - INTERVAL 57 DAY + INTERVAL 14 DAY, CURDATE() - INTERVAL 39 DAY, 'returned', NOW() - INTERVAL 39 DAY, NOW() - INTERVAL 58 DAY),
+  (82, 31, CURDATE() - INTERVAL 30 DAY, CURDATE() - INTERVAL 30 DAY + INTERVAL 14 DAY, CURDATE() - INTERVAL 12 DAY, 'returned', NULL, NOW() - INTERVAL 31 DAY),
   (82, 20, CURDATE() - INTERVAL 24 DAY, CURDATE() - INTERVAL 24 DAY + INTERVAL 14 DAY, NULL, 'overdue', NULL, NOW() - INTERVAL 25 DAY),
   (82, 27, CURDATE() - INTERVAL 17 DAY, CURDATE() - INTERVAL 17 DAY + INTERVAL 14 DAY, NULL, 'overdue', NULL, NOW() - INTERVAL 18 DAY),
   (82, 3, CURDATE() - INTERVAL 14 DAY, CURDATE() - INTERVAL 14 DAY + INTERVAL 14 DAY, NULL, 'active', NULL, NOW() - INTERVAL 15 DAY),

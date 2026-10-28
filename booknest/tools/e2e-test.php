@@ -201,7 +201,7 @@ check('T33', 'POST without CSRF token is rejected', (int) db_value('SELECT COUNT
 
 $r = $aisha->get('admin.php');
 $land = $aisha->get(local_path($r['location']));
-check('T31', 'Member opening admin.php is refused', $r['code'] === 303 && str_contains(flash_text($land['body']), 'library staff only'), 'Redirected home: ' . flash_text($land['body']));
+check('T31', 'Member opening admin.php is refused', $r['code'] === 303 && local_path($r['location']) === '' && !str_contains(flash_text($land['body']), 'staff'), 'Sent home, no staff-only message');
 
 $before = (int) db_value('SELECT COUNT(*) FROM books');
 $r = $v->req('process/add-book.php', ['serial_no' => 'BNT-999999', 'title' => 'X']);
@@ -417,6 +417,75 @@ $mail = substr((string) @file_get_contents($mailLog), $m0);
 check('T28', 'Email to an external address is refused and logged', str_contains($f['flash'], 'Borrowed') && str_contains($mail, "reader$stamp@gmail.com") && str_contains($mail, 'refused: external recipient blocked'),
     'Loan saved; mail.log: "refused: external recipient blocked"');
 
+// ---- Renewals, borrowing limits, settling fees, reminders --------------------------------------------
+$u6 = new Client('u6');
+$u6->submit('process/register.php', ['full_name' => 'Test Six', 'email' => "six$stamp@localhost", 'password' => 'Abcdefg123', 'confirm' => 'Abcdefg123', 'agree' => '1']);
+$id6 = $uid("six$stamp@localhost");
+[$r1, $r2, $r3, $r4, $r5, $r6, $r7, $r8] = $quietBooks(8);
+$loanOf = fn(int $user, int $book) => db_one("SELECT * FROM loans WHERE user_id = ? AND book_id = ? AND status <> 'returned'", [$user, $book]);
+$borrow = fn(Client $c, int $book) => $c->submit('process/loan.php', ['action' => 'borrow', 'book_id' => (string) $book, 'collection_date' => $today]);
+$renew = fn(Client $c, array $loan) => $c->submit('process/loan.php', ['action' => 'renew', 'loan_id' => (string) $loan['id']]);
+
+$borrow($u6, $r1);
+$m0 = $mailSize();
+$f = $renew($u6, $loanOf($id6, $r1));
+$l1 = $loanOf($id6, $r1);
+$mail = substr((string) @file_get_contents($mailLog), $m0);
+$f2 = $renew($u6, $l1);
+check('T95', 'Renew adds 14 days once, is emailed, and a second renewal is refused', str_contains($f['flash'], 'Renewed') && $l1['due_date'] === date('Y-m-d', strtotime('+28 day'))
+    && (int) $l1['renewals'] === 1 && str_contains($mail, 'Loan renewed') && str_contains($f2['flash'], 'already been renewed')
+    && $loanOf($id6, $r1)['due_date'] === $l1['due_date'], "due {$l1['due_date']}, renewals {$l1['renewals']} || " . $f2['flash']);
+
+$setCopies($r2, 1);
+$borrow($u6, $r2);
+$u5->submit('process/loan.php', ['action' => 'queue', 'book_id' => (string) $r2]);
+$l2 = $loanOf($id6, $r2);
+$f = $renew($u6, $l2);
+check('T96', 'Renew is refused while someone is waiting for the book', str_contains($f['flash'], 'Someone is waiting') && $loanOf($id6, $r2)['due_date'] === $l2['due_date'], $f['flash']);
+
+$borrow($u6, $r3);
+db_exec('UPDATE loans SET collection_date = CURDATE() - INTERVAL 15 DAY, due_date = CURDATE() - INTERVAL 1 DAY WHERE user_id = ? AND book_id = ?', [$id6, $r3]);
+$f = $renew($u6, $loanOf($id6, $r3));
+check('T97', 'An overdue loan cannot be renewed', str_contains($f['flash'], 'overdue, so it cannot be renewed'), $f['flash']);
+
+$before = (int) db_value("SELECT COUNT(*) FROM loans WHERE user_id = ?", [$id6]);
+$f = $borrow($u6, $r4);
+$paused = $u6->get('borrow.php?id=' . $r4)['body'];
+check('T98', 'A member with an overdue book cannot borrow, and is told why', str_contains($f['flash'], '1 overdue book') && str_contains($paused, 'New loans are paused')
+    && (int) db_value("SELECT COUNT(*) FROM loans WHERE user_id = ?", [$id6]) === $before, $f['flash']);
+
+// Make the overdue loan 10 days late (S$5.00), then return it: nothing is overdue, but the fee blocks new loans.
+$l3 = $loanOf($id6, $r3);
+db_exec('UPDATE loans SET collection_date = CURDATE() - INTERVAL 24 DAY, due_date = CURDATE() - INTERVAL 10 DAY WHERE id = ?', [$l3['id']]);
+$u6->submit('process/loan.php', ['action' => 'return', 'loan_id' => (string) $l3['id']]);
+$f = $borrow($u6, $r4);
+check('T99', 'Unpaid fees of S$5.00 or more stop new loans', str_contains($f['flash'], 'You owe S$5.00 in late fees') && !$loanOf($id6, $r4), $f['flash']);
+
+$f = $admin->submit('process/admin-action.php', ['action' => 'paid', 'id' => (string) $l1['id']]);
+check('T100', 'Admin cannot settle the fee of a book still out', str_contains($f['flash'], 'still out') && !db_value('SELECT fee_cleared_at FROM loans WHERE id = ?', [$l1['id']]), $f['flash']);
+$m0 = $mailSize();
+$f = $admin->submit('process/admin-action.php', ['action' => 'paid', 'id' => (string) $l3['id']]);
+$mail = substr((string) @file_get_contents($mailLog), $m0);
+$f2 = $admin->submit('process/admin-action.php', ['action' => 'paid', 'id' => (string) $l3['id']]);
+$f3 = $borrow($u6, $r4);
+check('T101', 'Admin marks a fee paid: receipt emailed, member can borrow again', str_contains($f['flash'], 'Marked S$5.00 as paid') && str_contains($mail, 'Late fee paid')
+    && str_contains($f2['flash'], 'already marked') && fees_owed($id6) === 0.0 && str_contains($f3['flash'], 'Borrowed'), $f['flash'] . ' || ' . $f3['flash']);
+
+foreach ([$r5, $r6, $r7] as $bk) {
+    $borrow($u6, $bk);
+}
+$open = (int) db_value("SELECT COUNT(*) FROM loans WHERE user_id = ? AND status <> 'returned'", [$id6]);
+$f = $borrow($u6, $r8);
+check('T102', 'A member can hold at most ' . MAX_LOANS . ' books at once', $open === MAX_LOANS && str_contains($f['flash'], 'the most a member can hold') && !$loanOf($id6, $r8),
+    "$open open loans || " . $f['flash']);
+
+db_exec('UPDATE loans SET collection_date = CURDATE() - INTERVAL 14 DAY, due_date = CURDATE() WHERE user_id = ? AND book_id = ?', [$id6, $r2]);
+$acct = $u6->get('account.php')['body'];
+$home = $u6->get('index.php')['body'];
+$title2 = (string) db_value('SELECT title FROM books WHERE id = ?', [$r2]);
+check('T103', 'A book due today is flagged on My Account and Home', str_contains($acct, 'Reminder:') && str_contains($home, 'Reminder:')
+    && str_contains(html_entity_decode($acct, ENT_QUOTES), $title2 . ' is due today'), '"' . $title2 . ' is due today" on both pages');
+
 // ---- Add book and approval ----------------------------------------------------------------------
 $serial = sprintf('BNT-%06d', 900000 + (int) date('is'));
 $book = ['serial_no' => $serial, 'title' => 'The Test of Time', 'author' => 'Ada Tester', 'category_id' => '1', 'price' => '12.50',
@@ -430,9 +499,20 @@ check('T34', 'Duplicate serial number is rejected', str_contains($f['page']['bod
 $f = $aisha->submit('process/add-book.php', ['serial_no' => 'ABC-12'] + $book);
 check('T34b', 'Badly formatted serial number is rejected', str_contains($f['page']['body'], 'BNT- followed by six digits'), 'Format error shown');
 
+$m0 = $mailSize();
 $f = $admin->submit('process/admin-action.php', ['action' => 'approve', 'id' => (string) $row['id']]);
+$mail = substr((string) @file_get_contents($mailLog), $m0);
 $inCatalogue = str_contains($v->get('catalogue.php?q=Test+of+Time')['body'], 'The Test of Time');
 check('T36', 'Admin approval puts the book in the catalogue', $inCatalogue, $f['flash']);
+check('T104', 'The member who added the book is emailed the approval', str_contains($mail, 'aisha@localhost') && str_contains($mail, 'Your book is in the library'), $f['flash']);
+
+$serial2 = sprintf('BNT-%06d', 800000 + (int) date('is'));
+$aisha->submit('process/add-book.php', ['serial_no' => $serial2, 'title' => 'The Test of Patience'] + $book);
+$m0 = $mailSize();
+$f = $admin->submit('process/admin-action.php', ['action' => 'reject', 'id' => (string) db_value('SELECT id FROM books WHERE serial_no = ?', [$serial2])]);
+$mail = substr((string) @file_get_contents($mailLog), $m0);
+check('T105', 'A rejection is emailed to the member too', str_contains($f['flash'], 'was rejected') && str_contains($mail, 'Your book suggestion')
+    && db_value('SELECT status FROM books WHERE serial_no = ?', [$serial2]) === 'rejected', $f['flash']);
 
 $r = $admin->get('admin.php');
 $owed = (float) db_value('SELECT SUM(GREATEST(0, DATEDIFF(COALESCE(returned_date, CURDATE()), due_date)) * 0.50) FROM loans WHERE fee_cleared_at IS NULL');
@@ -491,6 +571,7 @@ check('T18', 'Idle for 31 minutes signs the member out', $r['code'] === 303 && s
 
 // Remove the cover generated for the test book, so test runs leave no files behind.
 @unlink(APP_ROOT . '/assets/covers/' . strtolower($serial) . '.svg');
+@unlink(APP_ROOT . '/assets/covers/' . strtolower($serial2) . '.svg');
 
 // ---- Summary ------------------------------------------------------------------------------------------
 $passed = count(array_filter($results, fn($x) => $x[2]));

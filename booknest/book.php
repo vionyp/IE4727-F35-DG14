@@ -24,6 +24,8 @@ $onShelf = $user && db_value('SELECT 1 FROM shelf WHERE user_id = ? AND book_id 
 $loan = my_loans()[$book['id']] ?? null;
 $entry = my_queue()[$book['id']] ?? null;
 $available = max(0, (int) $book['stock'] - (int) $book['on_loan'] - (int) $book['held']);
+// Only worth checking when the page would offer a Borrow button.
+$blocks = $user && !$loan && (($entry && $entry['status'] === 'offered') || (!$entry && $available > 0)) ? borrow_blocks((int) $user['id']) : [];
 $pagesInSample = $book['sample_text'] ? substr_count($book['sample_text'], '---PAGE---') + 1 : 0;
 $similar = db_all('SELECT ' . card_columns() . " FROM books b WHERE b.status = 'approved' AND b.category_id = ? AND b.id <> ?
                    ORDER BY b.rating DESC LIMIT 8", [$book['category_id'], $book['id']]);
@@ -88,7 +90,9 @@ require __DIR__ . '/includes/header.php';
       <a class="btn btn-ghost" href="<?= e(url('sign-in.php?return=' . rawurlencode(current_path()))) ?>"><?= icon('bookmark', 18) ?> Sign in to save</a>
       <?php endif; ?>
     </div>
-    <?php if ($entry && $entry['status'] === 'waiting'): ?>
+    <?php if ($blocks): ?>
+    <div class="notice notice-alert" role="status"><?= icon('lock', 18) ?><p><strong>New loans are paused.</strong> <?= e($blocks[0]) ?> <a href="<?= e(url('account.php#loans')) ?>">See your loans</a></p></div>
+    <?php elseif ($entry && $entry['status'] === 'waiting'): ?>
     <p class="notice"><?= icon('queue', 18) ?> We will email you as soon as a copy is yours, then hold it for <?= QUEUE_HOLD_DAYS ?> days. Meanwhile you can read the <?= sample_word($book) ?>.</p>
     <?php elseif (!$loan && !$entry && $available <= 0 && (int) $book['stock'] > 0): ?>
     <p class="notice">Every copy is out. Join the queue and we will email you when one comes back. You can still read the <?= sample_word($book) ?> now.</p>

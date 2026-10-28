@@ -455,12 +455,13 @@ $sql[] = "INSERT INTO shelf (user_id, book_id, added_at) VALUES\n  "
 // Budy: a demo member with every loan state on one account. Kept apart from the generated data
 // above and free of mt_rand, so adding him does not change anyone else's rows.
 $budy = count($users) + 1;
-$sql[] = "-- Budy (budy@gmail.com / budy123!): overdue loans, a loan due today, ongoing loans and a paid late return.";
+$sql[] = "-- Budy (budy@gmail.com / budy123!): overdue loans, a loan due today, ongoing loans, a paid late return and an unpaid one.";
 $sql[] = "INSERT INTO users (id, full_name, email, password_hash, role, created_at) VALUES\n  "
     . "($budy, 'budy', 'budy@gmail.com', " . q(password_hash('budy123!', PASSWORD_DEFAULT)) . ", 'member', NOW() - INTERVAL 60 DAY);\n";
 $budyLoans = [
     // [title, collected (days from today), returned (null = still out), status, fee paid (days from today)]
     ['The Great Gatsby', -57, -39, 'returned', -39],   // returned 4 days late, S$2.00 paid
+    ['Sapiens', -30, -12, 'returned', null],           // returned 4 days late, S$2.00 not paid yet
     ['Gone Girl', -24, null, 'overdue', null],         // 10 days overdue, S$5.00
     ['The Martian', -17, null, 'overdue', null],       // 3 days overdue, S$1.50
     ['Deep Work', -14, null, 'active', null],          // due today, last day before fees

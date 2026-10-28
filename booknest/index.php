@@ -1,5 +1,5 @@
 <?php
-// Home: featured billboard, sign in or personal welcome, book rows, study room teaser, opening hours.
+// Home: featured billboard, sign in or personal welcome (with due soon and overdue reminders), book rows, study room teaser, opening hours.
 require __DIR__ . '/includes/bootstrap.php';
 
 $cols = card_columns();
@@ -32,6 +32,7 @@ if ($ids = recent_ids()) {
 $user = current_user();
 $nextBooking = null;
 $shelfCount = 0;
+$alerts = ['overdue' => [], 'soon' => []];
 if ($user) {
     $nextBooking = db_one("SELECT rb.booking_date, rb.start_time, rb.end_time, r.name FROM room_bookings rb
                            JOIN study_rooms r ON r.id = rb.room_id
@@ -39,6 +40,7 @@ if ($user) {
                              AND (rb.booking_date > CURDATE() OR (rb.booking_date = CURDATE() AND rb.end_time > CURTIME()))
                            ORDER BY rb.booking_date, rb.start_time LIMIT 1", [$user['id']]);
     $shelfCount = (int) db_value('SELECT COUNT(*) FROM shelf WHERE user_id = ?', [$user['id']]);
+    $alerts = loan_alerts((int) $user['id']);
 }
 
 $rooms = db_all('SELECT id, name, is_active FROM study_rooms ORDER BY id');
@@ -83,6 +85,12 @@ require __DIR__ . '/includes/header.php';
       <p class="welcome-note"><?= icon('clock', 18) ?> Next study room: <strong><?= e($nextBooking['name']) ?></strong>, <?= e(short_date($nextBooking['booking_date'])) ?>, <?= e(hm($nextBooking['start_time'])) ?> to <?= e(hm($nextBooking['end_time'])) ?>.</p>
       <?php else: ?>
       <p class="welcome-note">No study room booked. <?= $freeToday ?> free slots are left today.</p>
+      <?php endif; ?>
+      <?php if ($alerts['overdue']): $n = count($alerts['overdue']); ?>
+      <p class="welcome-note is-overdue"><?= icon('lock', 18) ?> <span><strong><?= $n ?> overdue:</strong> <?= e(implode(', ', array_column($alerts['overdue'], 'title'))) ?>. Return <?= $n === 1 ? 'it' : 'them' ?> to stop the fee growing and to borrow again.</span></p>
+      <?php endif; ?>
+      <?php if ($alerts['soon']): ?>
+      <p class="welcome-note is-soon"><?= icon('clock', 18) ?> <span><strong>Reminder:</strong> <?= e(implode('; ', array_map(fn($l) => $l['title'] . ' is ' . due_soon_text($l), $alerts['soon']))) ?>. <a href="<?= e(url('account.php#loans')) ?>">Return or renew</a></span></p>
       <?php endif; ?>
     </div>
     <ul class="welcome-links" role="list">

@@ -1,5 +1,5 @@
 <?php
-// My Account: loans (due dates, late fees, return), queue places, room bookings, My Shelf and submissions.
+// My Account: loans (due dates, late fees, renew, return), reminders, queue places, room bookings, My Shelf and submissions.
 require __DIR__ . '/includes/bootstrap.php';
 $user = require_login('Please sign in to see your account.');
 $uid = (int) $user['id'];
@@ -20,6 +20,8 @@ $shelf = db_all('SELECT ' . card_columns() . ", s.added_at FROM shelf s JOIN boo
 $submissions = db_all('SELECT id, serial_no, title, status, created_at FROM books WHERE added_by = ? ORDER BY created_at DESC', [$uid]);
 $minutesToday = minutes_used($uid, date('Y-m-d'));
 $owed = fees_owed($uid);
+$blocks = borrow_blocks($uid);
+$dueSoon = loan_alerts($uid)['soon'];
 $highlight = input_int($_GET, 'loan');
 
 $page_title = 'My Account';
@@ -61,9 +63,15 @@ require __DIR__ . '/includes/header.php';
       <h2 id="loans-title">Your loans</h2>
       <a class="btn btn-secondary btn-sm" href="<?= e(url('catalogue.php?sort=available')) ?>">Find a book</a>
     </div>
+    <?php if ($blocks): ?>
+    <div class="notice notice-alert" role="status"><?= icon('lock', 18) ?><p><strong>New loans are paused.</strong> <?= e(implode(' ', $blocks)) ?></p></div>
+    <?php endif; ?>
+    <?php if ($dueSoon): ?>
+    <p class="notice notice-soon" role="status"><?= icon('clock', 18) ?> <span><strong>Reminder:</strong> <?= e(implode('; ', array_map(fn($l) => $l['title'] . ' is ' . due_soon_text($l), $dueSoon))) ?>. Return or renew in time to avoid the <?= money(LATE_FEE_PER_DAY) ?> a day late fee.</span></p>
+    <?php endif; ?>
     <?php if ($loans): ?>
     <ul class="loan-list" role="list">
-      <?php foreach ($loans as $l): $state = loan_state($l); $late = loan_days_late($l); $daysLeft = days_between(date('Y-m-d'), $l['due_date']); ?>
+      <?php foreach ($loans as $l): $state = loan_state($l); $late = loan_days_late($l); $daysLeft = days_between(date('Y-m-d'), $l['due_date']); $renewWhy = renew_problem($l); ?>
       <li class="loan-item<?= $state === 'overdue' ? ' is-overdue' : '' ?><?= $highlight === (int) $l['id'] ? ' is-highlight' : '' ?>">
         <a href="<?= e(book_url((int) $l['book_id'])) ?>" tabindex="-1" aria-hidden="true"><?= cover_img($l, 'line-cover', true, 64) ?></a>
         <div class="loan-body">
@@ -73,10 +81,22 @@ require __DIR__ . '/includes/header.php';
           <?php elseif ($state === 'overdue'): ?>
           <p><span class="avail is-out"><?= $late ?> <?= $late === 1 ? 'day' : 'days' ?> overdue, <?= money(loan_fee($l)) ?> owed so far</span> It was due back on <?= e(long_date($l['due_date'])) ?>. The fee grows by <?= money(LATE_FEE_PER_DAY) ?> a day until you return it.</p>
           <?php else: ?>
-          <p><span class="avail <?= $daysLeft === 0 ? 'is-low' : 'is-mine' ?>"><?= $daysLeft === 0 ? 'Due today' : 'Due back in ' . $daysLeft . ($daysLeft === 1 ? ' day' : ' days') ?></span> Collected <?= e(short_date($l['collection_date'])) ?>, due <?= e(long_date($l['due_date'])) ?>.</p>
+          <p><span class="avail <?= $daysLeft === 0 ? 'is-low' : 'is-mine' ?>"><?= $daysLeft === 0 ? 'Due today' : 'Due back in ' . $daysLeft . ($daysLeft === 1 ? ' day' : ' days') ?></span> Collected <?= e(short_date($l['collection_date'])) ?>, due <?= e(long_date($l['due_date'])) ?>.<?= (int) $l['renewals'] > 0 ? ' Renewed ' . ((int) $l['renewals'] === 1 ? 'once' : (int) $l['renewals'] . ' times') . '.' : '' ?></p>
+          <?php if ($renewWhy && (int) $l['renewals'] < MAX_RENEWALS): ?>
+          <p class="small muted"><?= e($renewWhy) ?></p>
+          <?php endif; ?>
           <?php endif; ?>
         </div>
-        <form class="loan-action" action="<?= e(url('process/loan.php')) ?>" method="post" data-confirm>
+        <div class="loan-action cluster">
+        <?php if (!$renewWhy): ?>
+        <form action="<?= e(url('process/loan.php')) ?>" method="post">
+          <?= csrf_field() ?>
+          <input type="hidden" name="action" value="renew">
+          <input type="hidden" name="loan_id" value="<?= (int) $l['id'] ?>">
+          <button type="submit" class="btn btn-secondary btn-sm" aria-label="Renew <?= e($l['title']) ?> until <?= e(long_date(due_date_for($l['due_date']))) ?>"><?= icon('clock', 16) ?> Renew to <?= e(short_date(due_date_for($l['due_date']))) ?></button>
+        </form>
+        <?php endif; ?>
+        <form action="<?= e(url('process/loan.php')) ?>" method="post" data-confirm>
           <?= csrf_field() ?>
           <input type="hidden" name="action" value="return">
           <input type="hidden" name="loan_id" value="<?= (int) $l['id'] ?>">
@@ -87,11 +107,12 @@ require __DIR__ . '/includes/header.php';
             <button type="button" class="btn btn-ghost btn-sm" data-confirm-dismiss hidden>Not yet</button>
           </div>
         </form>
+        </div>
       </li>
       <?php endforeach; ?>
     </ul>
     <?php else: ?>
-    <p class="notice">No books on loan. Borrow up to one copy of any title, free for <?= LOAN_DAYS ?> days. <a href="<?= e(url('catalogue.php?sort=available')) ?>">See what is on the shelf</a></p>
+    <p class="notice">No books on loan. Borrow up to <?= MAX_LOANS ?> books at a time, free for <?= LOAN_DAYS ?> days, and renew each one <?= MAX_RENEWALS === 1 ? 'once' : MAX_RENEWALS . ' times' ?>. <a href="<?= e(url('catalogue.php?sort=available')) ?>">See what is on the shelf</a></p>
     <?php endif; ?>
 
     <?php if ($queue): ?>

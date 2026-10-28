@@ -1,5 +1,5 @@
 <?php
-// Admin actions: approve or reject submissions, edit or delete books, open or close rooms.
+// Admin actions: approve or reject submissions (and email the member), settle late fees, edit or delete books, open or close rooms.
 // Changing the number of copies locks the book row, so it cannot race a member borrowing the last copy.
 require __DIR__ . '/../includes/bootstrap.php';
 require_post();
@@ -13,13 +13,47 @@ switch ($action) {
     case 'approve':
     case 'reject':
         $status = $action === 'approve' ? 'approved' : 'rejected';
-        $title = db_value("SELECT title FROM books WHERE id = ? AND status = 'pending'", [$id]);
-        if ($title && db_exec('UPDATE books SET status = ?, created_at = IF(? = \'approved\', NOW(), created_at) WHERE id = ?', [$status, $status, $id])) {
-            flash('success', $title . ($status === 'approved' ? ' is approved and now in the catalogue.' : ' was rejected.'));
+        $sub = db_one("SELECT b.title, b.serial_no, u.full_name, u.email FROM books b LEFT JOIN users u ON u.id = b.added_by
+                       WHERE b.id = ? AND b.status = 'pending'", [$id]);
+        if ($sub && db_exec("UPDATE books SET status = ?, created_at = IF(? = 'approved', NOW(), created_at) WHERE id = ? AND status = 'pending'", [$status, $status, $id])) {
+            // Let the member who sent the book know the decision.
+            if ($sub['email']) {
+                send_mail($sub['email'], ($status === 'approved' ? 'Your book is in the library: ' : 'Your book suggestion: ') . $sub['title'],
+                    mail_body(first_name($sub), $status === 'approved'
+                        ? 'Good news. ' . $sub['title'] . ' (' . $sub['serial_no'] . "), the book you added, has been approved by a librarian.\n\n"
+                            . "It is now in the catalogue, so you and every other member can find it, read the sample and borrow it.\nThank you for helping the library grow."
+                        : 'Thank you for suggesting ' . $sub['title'] . ' (' . $sub['serial_no'] . ").\n\n"
+                            . "A librarian has reviewed it and it will not be added to the catalogue this time.\n"
+                            . 'You are welcome to suggest other books from Add a book on BookNest.'));
+            }
+            flash('success', $sub['title'] . ($status === 'approved' ? ' is approved and now in the catalogue.' : ' was rejected.')
+                . ($sub['email'] ? ' ' . first_name($sub) . ' has been emailed.' : ''));
         } else {
             flash('error', 'That submission was already handled.');
         }
         redirect('admin.php#pending');
+
+    case 'paid':
+        // Settles the late fee of a returned loan at the front desk. A loan still out has a fee that keeps
+        // growing, so it can only be settled once the book is back.
+        $loan = db_one('SELECT l.*, b.title, u.full_name, u.email FROM loans l JOIN books b ON b.id = l.book_id
+                        JOIN users u ON u.id = l.user_id WHERE l.id = ?', [$id]);
+        $fee = $loan ? loan_fee($loan) : 0.0;
+        if (!$loan) {
+            flash('error', 'That loan no longer exists.');
+        } elseif ($loan['status'] !== 'returned') {
+            flash('error', $loan['title'] . ' is still out, so its fee is still growing. Settle it once the book is returned.');
+        } elseif ($fee <= 0) {
+            flash('error', $loan['title'] . ' came back on time, so there is no fee to settle.');
+        } elseif (db_exec('UPDATE loans SET fee_cleared_at = NOW() WHERE id = ? AND fee_cleared_at IS NULL', [$id]) !== 1) {
+            flash('error', 'That fee was already marked as paid.');
+        } else {
+            send_mail($loan['email'], 'Late fee paid: ' . $loan['title'],
+                mail_body(first_name($loan), 'Thank you. We have received your late fee of ' . money($fee) . ' for ' . $loan['title']
+                    . ', which came back ' . days_text(loan_days_late($loan)) . " late.\n\nThis is your receipt. Nothing more is owed for this loan."));
+            flash('success', 'Marked ' . money($fee) . ' as paid for ' . $loan['full_name'] . ' (' . $loan['title'] . '). A receipt has been emailed.');
+        }
+        redirect('admin.php#fees');
 
     case 'update':
         $book = db_one('SELECT id, title FROM books WHERE id = ?', [$id]);

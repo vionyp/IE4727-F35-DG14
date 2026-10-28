@@ -9,6 +9,13 @@
 .account-section:focus { outline: none; }
 .notice { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); padding: var(--s3) var(--s4); background: rgba(23, 27, 34, .78); border: 1px solid var(--border); border-radius: var(--radius); color: var(--muted); margin-block: var(--s4); }
 .notice .icon { color: var(--accent); }
+/* Borrowing paused (red) and due soon reminder (amber): text stays light so contrast holds. */
+.notice-alert, .notice-soon { flex-wrap: nowrap; align-items: flex-start; color: var(--text); }
+.notice-alert > p, .notice-soon > span { margin: 0; }
+.notice-alert .icon, .notice-soon .icon { flex: none; margin-top: .2rem; }
+.notice-alert { background: rgba(229, 97, 90, .1); border-color: rgba(229, 97, 90, .5); }
+.notice-alert .icon { color: #F08A84; }
+.notice-soon { background: rgba(var(--glow-amber), .08); border-color: rgba(var(--glow-amber), .4); }
 .center { text-align: center; }
 .block { display: block; }
 .mono { font-family: Consolas, "SFMono-Regular", Menlo, monospace; font-size: .85rem; }
@@ -88,6 +95,9 @@ code { font-family: Consolas, "SFMono-Regular", Menlo, monospace; font-size: .88
 .welcome h2 { font-size: var(--step-3); margin-top: var(--s1); }
 .welcome-note { display: flex; gap: var(--s2); align-items: center; color: var(--muted); margin-top: var(--s2); }
 .welcome-note .icon { color: var(--teal); flex: none; }
+.welcome-note.is-overdue, .welcome-note.is-soon { color: var(--text); align-items: flex-start; }
+.welcome-note.is-overdue .icon { color: #F08A84; margin-top: .2rem; }
+.welcome-note.is-soon .icon { color: var(--accent); margin-top: .2rem; }
 .welcome-links { display: flex; flex-wrap: wrap; gap: var(--s2); list-style: none; padding: 0; }
 @media (min-width: 900px) { .welcome { grid-template-columns: 1fr auto; } }
 

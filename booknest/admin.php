@@ -1,5 +1,5 @@
 <?php
-// Admin dashboard: analytics built with GROUP BY and aggregates, approvals, book and room management.
+// Admin dashboard: analytics built with GROUP BY and aggregates, late fees to settle, approvals, book and room management.
 require __DIR__ . '/includes/bootstrap.php';
 require_admin();
 
@@ -32,6 +32,12 @@ $queues = db_all("SELECT b.title, COUNT(q.id) AS waiting
 $overdue = db_all("SELECT l.id, l.due_date, b.title, u.full_name, u.email, DATEDIFF(CURDATE(), l.due_date) AS days_late, $fee AS fee
                    FROM loans l JOIN books b ON b.id = l.book_id JOIN users u ON u.id = l.user_id
                    WHERE l.status <> 'returned' AND l.due_date < CURDATE() ORDER BY l.due_date, l.id LIMIT 10");
+// Late fees on returned books that have not been paid yet, ready to be settled at the desk.
+$toSettle = db_all("SELECT l.id, l.due_date, l.returned_date, b.title, u.full_name, u.email,
+                           DATEDIFF(l.returned_date, l.due_date) AS days_late, $fee AS fee
+                    FROM loans l JOIN books b ON b.id = l.book_id JOIN users u ON u.id = l.user_id
+                    WHERE l.status = 'returned' AND l.fee_cleared_at IS NULL AND l.returned_date > l.due_date
+                    ORDER BY l.returned_date DESC, l.id DESC");
 // New loans per day over the last 14 days (missing days filled with zero).
 $perDayRows = db_all("SELECT DATE(created_at) AS day, COUNT(*) AS loans FROM loans
                       WHERE created_at >= CURDATE() - INTERVAL 13 DAY GROUP BY DATE(created_at)");
@@ -142,6 +148,41 @@ $maxDay = max($perDay) ?: 1;
         <p class="small muted"><?= $cancelRate ?>% of bookings are cancelled in advance.</p>
       </div>
     </div>
+  </section>
+
+  <section id="fees" class="account-section" aria-labelledby="fees-title" tabindex="-1">
+    <div class="section-head">
+      <h2 id="fees-title">Late fees to settle <span class="pill is-pending"><?= count($toSettle) ?></span></h2>
+      <p class="muted small">Books that came back late. Mark a fee as paid when the member settles it at the desk. Fees on books still out keep growing, so they are settled after the return.</p>
+    </div>
+    <?php if ($toSettle): ?>
+    <div class="table-wrap">
+      <table class="data-table">
+        <caption>Unpaid late fees on returned books, most recent return first</caption>
+        <thead><tr><th scope="col">Member</th><th scope="col">Book</th><th scope="col">Due</th><th scope="col">Returned</th><th scope="col" class="num">Fee</th><th scope="col">Action</th></tr></thead>
+        <tbody>
+          <?php foreach ($toSettle as $s): ?>
+          <tr>
+            <th scope="row"><?= e($s['full_name']) ?><span class="muted small block"><?= e($s['email']) ?></span></th>
+            <td><?= e($s['title']) ?></td>
+            <td><?= e(date('j M', strtotime($s['due_date']))) ?></td>
+            <td><?= e(date('j M', strtotime($s['returned_date']))) ?> <span class="pill is-out"><?= days_text((int) $s['days_late']) ?> late</span></td>
+            <td class="num"><?= money($s['fee']) ?></td>
+            <td>
+              <form action="<?= e(url('process/admin-action.php')) ?>" method="post">
+                <?= csrf_field() ?>
+                <input type="hidden" name="id" value="<?= (int) $s['id'] ?>">
+                <button class="btn btn-teal btn-sm" type="submit" name="action" value="paid" aria-label="Mark <?= e(money($s['fee'])) ?> paid by <?= e($s['full_name']) ?> for <?= e($s['title']) ?>">Mark as paid</button>
+              </form>
+            </td>
+          </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+    <?php else: ?>
+    <p class="notice">No unpaid fees on returned books.</p>
+    <?php endif; ?>
   </section>
 
   <section id="pending" class="account-section" aria-labelledby="pending-title" tabindex="-1">

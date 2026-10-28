@@ -70,6 +70,50 @@ function fees_owed(int $userId): float
                              WHERE l.user_id = ? AND l.fee_cleared_at IS NULL', [$userId]);
 }
 
+// Returns the reasons a member may not borrow right now (an empty list means they may).
+// Joining a queue is still allowed; only new loans stop.
+function borrow_blocks(int $userId): array
+{
+    $row = db_one("SELECT COUNT(*) AS open_loans, COALESCE(SUM(due_date < CURDATE()), 0) AS overdue
+                   FROM loans WHERE user_id = ? AND status <> 'returned'", [$userId]);
+    $open = (int) $row['open_loans'];
+    $overdue = (int) $row['overdue'];
+    $owed = fees_owed($userId);
+    $reasons = [];
+    if ($overdue > 0) {
+        $reasons[] = 'You have ' . $overdue . ' overdue ' . ($overdue === 1 ? 'book' : 'books') . '. Return '
+            . ($overdue === 1 ? 'it' : 'them') . ' first, then you can borrow again.';
+    }
+    if ($open >= MAX_LOANS) {
+        $reasons[] = 'You have ' . $open . ' books on loan, the most a member can hold at once is ' . MAX_LOANS . '. Return one to borrow another.';
+    }
+    if ($owed >= FEE_BLOCK_LIMIT) {
+        $reasons[] = 'You owe ' . money($owed) . ' in late fees. New loans stop from ' . money(FEE_BLOCK_LIMIT)
+            . ' until the fees are settled at the front desk.';
+    }
+    return $reasons;
+}
+
+// Returns the member's open loans that need attention: ['overdue' => [...], 'soon' => [...]], each with the title.
+// "soon" means collected and due today or within DUE_SOON_DAYS days.
+function loan_alerts(int $userId): array
+{
+    $rows = db_all("SELECT l.*, b.title FROM loans l JOIN books b ON b.id = l.book_id
+                    WHERE l.user_id = ? AND l.status <> 'returned' AND l.collection_date <= CURDATE()
+                      AND l.due_date <= CURDATE() + INTERVAL " . (int) DUE_SOON_DAYS . " DAY
+                    ORDER BY l.due_date, l.id", [$userId]);
+    $today = date('Y-m-d');
+    return ['overdue' => array_values(array_filter($rows, fn($l) => $l['due_date'] < $today)),
+            'soon' => array_values(array_filter($rows, fn($l) => $l['due_date'] >= $today))];
+}
+
+// Returns "due today", "due tomorrow" or "due in 2 days" for a loan that is not overdue.
+function due_soon_text(array $loan): string
+{
+    $days = days_between(date('Y-m-d'), $loan['due_date']);
+    return $days === 0 ? 'due today' : ($days === 1 ? 'due tomorrow' : 'due in ' . $days . ' days');
+}
+
 // Returns the copy counts of one book: owned, on loan, held for the queue, waiting, available, next due date.
 function book_counts(int $bookId): array
 {
@@ -308,6 +352,8 @@ function borrow_book(array $user, int $bookId, string $collectionDate): array
             $problem = 'That book is not in the catalogue.';
         } elseif (db_value("SELECT 1 FROM loans WHERE user_id = ? AND book_id = ? AND status <> 'returned'", [$uid, $bookId])) {
             $problem = 'You already have ' . $book['title'] . ' on loan. Return it before borrowing it again.';
+        } elseif ($blocks = borrow_blocks($uid)) {
+            $problem = implode(' ', $blocks);
         } else {
             $offer = db_one("SELECT * FROM book_queue WHERE user_id = ? AND book_id = ? AND status IN ('waiting','offered')", [$uid, $bookId]);
             $counts = book_counts($bookId);
@@ -438,5 +484,64 @@ function return_loan(array $user, int $loanId): array
                 . ($fee > 0 ? "\n\nIt came back " . days_text(loan_days_late($loan)) . ' late, so a late fee of ' . money($fee)
                     . ' has been added to your account. Please settle it at the front desk.' : "\n\nIt came back on time. No fee is due."))));
     send_queue_offers($offers);
+    return ['', $loan];
+}
+
+// Returns why a loan cannot be renewed right now, or '' if it can. Used by My Account and by renew_loan().
+function renew_problem(array $loan): string
+{
+    $today = date('Y-m-d');
+    if ($loan['returned_date'] || $loan['status'] === 'returned') {
+        return 'That loan has already been returned.';
+    }
+    if ($loan['collection_date'] > $today) {
+        return 'A reservation can be renewed once you have collected the book.';
+    }
+    if ($loan['due_date'] < $today) {
+        return 'It is overdue, so it cannot be renewed. Please return it.';
+    }
+    if ((int) $loan['renewals'] >= MAX_RENEWALS) {
+        return 'It has already been renewed ' . (MAX_RENEWALS === 1 ? 'once' : MAX_RENEWALS . ' times') . ', the most allowed.';
+    }
+    if (db_value("SELECT 1 FROM book_queue WHERE book_id = ? AND status IN ('waiting','offered') LIMIT 1", [$loan['book_id']])) {
+        return 'Someone is waiting for this book, so it cannot be renewed.';
+    }
+    return '';
+}
+
+// Extends a loan by another LOAN_DAYS from its current due date. Returns [error or '', the renewed loan].
+// The book row is locked, so nobody can join the queue between the check and the update.
+function renew_loan(array $user, int $loanId): array
+{
+    $bookId = (int) db_value('SELECT book_id FROM loans WHERE id = ? AND user_id = ?', [$loanId, $user['id']]);
+    if (!$bookId) {
+        return ['We could not find that loan.', []];
+    }
+    $db = db();
+    $db->begin_transaction();
+    try {
+        db_one('SELECT id FROM books WHERE id = ? FOR UPDATE', [$bookId]);
+        $loan = db_one('SELECT l.*, b.title FROM loans l JOIN books b ON b.id = l.book_id WHERE l.id = ? AND l.user_id = ? FOR UPDATE',
+            [$loanId, $user['id']]);
+        if (!$loan) {
+            $db->rollback();
+            return ['We could not find that loan.', []];
+        }
+        if ($problem = renew_problem($loan)) {
+            $db->rollback();
+            return ['Could not renew ' . $loan['title'] . '. ' . $problem, []];
+        }
+        db_exec('UPDATE loans SET due_date = due_date + INTERVAL ' . (int) LOAN_DAYS . ' DAY, renewals = renewals + 1 WHERE id = ?', [$loanId]);
+        $db->commit();
+    } catch (Throwable $e) {
+        $db->rollback();
+        throw $e;
+    }
+    $loan['due_date'] = due_date_for($loan['due_date']);
+    $loan['renewals'] = (int) $loan['renewals'] + 1;
+    send_mail($user['email'], 'Loan renewed: ' . $loan['title'] . ', now due back ' . short_date($loan['due_date']),
+        mail_body(first_name($user), 'Your loan of ' . $loan['title'] . ' is renewed for another ' . LOAN_DAYS . " days.\n\n"
+            . '  New due date: ' . long_date($loan['due_date']) . "\n\n"
+            . 'Each loan can be renewed ' . (MAX_RENEWALS === 1 ? 'once' : MAX_RENEWALS . ' times') . ', so please bring it back by then.'));
     return ['', $loan];
 }

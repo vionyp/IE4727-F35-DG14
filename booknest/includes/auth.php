@@ -79,13 +79,12 @@ function require_login(string $message = 'Please sign in to continue.'): array
     return $user;
 }
 
-// Allows only admins; others are sent away with a clear message.
+// Allows only admins; members are quietly sent back to the home page.
 function require_admin(): array
 {
     $user = require_login('Please sign in with a staff account.');
     if ($user['role'] !== 'admin') {
         app_log('Refused admin access for user ' . $user['id']);
-        flash('error', 'That page is for library staff only.');
         redirect('');
     }
     return $user;

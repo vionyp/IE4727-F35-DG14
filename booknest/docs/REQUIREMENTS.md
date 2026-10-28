@@ -136,7 +136,10 @@ an online library (see `CHANGELOG.md`). Constants live in `config/config.php`.
 | FR-21 | No price is shown to members anywhere. Every book shows live availability instead: "Available to borrow"; for the member's own loan "Due back in X days", "Due today" or "X days overdue" (in red); for a book someone else has, "Borrowed until [date]"; and "N people waiting" when a queue exists. |
 | FR-22 | A member can hold one open loan per title. When no copy is on the shelf the member can join a queue: they see their own position ("You are #2 in line"), everyone else sees the queue length, and they can leave the queue at any time. |
 | FR-23 | When a copy comes back (a return, or staff adding copies) the first person in the queue is emailed and the copy is held for them for `QUEUE_HOLD_DAYS` = 2 days. A hold that is not taken up passes to the next person. Two members can never take the same last copy. |
-| FR-24 | Members return a loan, or cancel a reservation not yet collected, from My Account. A late return costs `LATE_FEE_PER_DAY` = S$0.50 for every day after the due date, worked out live from the dates; returning stops the fee growing. My Account shows each overdue loan with the fee so far and the total owed. Paying fees is out of scope: they are settled at the front desk. |
+| FR-24 | Members return a loan, or cancel a reservation not yet collected, from My Account. A late return costs `LATE_FEE_PER_DAY` = S$0.50 for every day after the due date, worked out live from the dates; returning stops the fee growing. My Account shows each overdue loan with the fee so far and the total owed. Fees are paid at the front desk, where staff record the payment (FR-49); online payment is out of scope. |
+| FR-45 | New loans pause while the member has an overdue book, already holds `MAX_LOANS` = 6 open loans, or owes `FEE_BLOCK_LIMIT` = S$5.00 or more in unpaid fees. The server checks this inside the borrowing transaction; the Borrow page, the book page and My Account say which rule applies and what to do. Joining a queue is still allowed. |
+| FR-46 | A member can renew a collected loan from My Account `MAX_RENEWALS` = 1 time, adding another `LOAN_DAYS` to the due date, unless it is overdue or someone is waiting for the book. The renewal is emailed. |
+| FR-47 | Loans due today or within `DUE_SOON_DAYS` = 2 days are named in a reminder on Home and My Account; overdue loans are named on Home. |
 
 ### F6 Study rooms
 
@@ -155,7 +158,7 @@ an online library (see `CHANGELOG.md`). Constants live in `config/config.php`.
 |---|---|
 | FR-31 | Visitors can register with name, email and password (confirmed). |
 | FR-32 | Users can sign in, optionally remember their email, and sign out. |
-| FR-33 | My Account shows loans (due dates, fees, return), queue places, recent returns, upcoming bookings, My Shelf and book submissions. |
+| FR-33 | My Account shows loans (due dates, fees, renew, return), reminders, queue places, recent returns, upcoming bookings, My Shelf and book submissions. |
 | FR-34 | Members can save books to and remove books from My Shelf. |
 | FR-44 | A new member is offered a short guided tour straight after registering: find a book, open it, borrow it, see My loans, return. Each step highlights one element and freezes the rest of the page; click steps continue only when the highlighted element is clicked. Skip tour (or Escape) ends it at any time, and it can be replayed from My Account. The tour never borrows anything. |
 
@@ -171,7 +174,9 @@ an online library (see `CHANGELOG.md`). Constants live in `config/config.php`.
 
 | ID | Requirement |
 |---|---|
-| FR-38 | Admins can approve or reject pending books. |
+| FR-38 | Admins can approve or reject pending books. The member who added the book is emailed the decision (FR-48). |
+| FR-48 | Approving or rejecting a submission emails the member who sent it. |
+| FR-49 | Admins see unpaid late fees on returned books and can mark each one as paid, which emails the member a receipt and removes it from the fees they owe. A loan still out cannot be settled, because its fee is still growing. |
 | FR-39 | Admins can edit copies owned (never below the copies on loan or held for the queue), replacement value, featured and staff pick flags, and delete books that have never been borrowed. Added copies are offered to the queue at once. |
 | FR-40 | Admins can open or close study rooms. |
 | FR-41 | Admins see analytics built with GROUP BY and aggregates: books on loan, overdue loans, late fees outstanding, people in queues, most borrowed books, loans by category, longest queues, overdue loans with fees, new loans per day (14 days), bookings per room, busiest hours, members. |

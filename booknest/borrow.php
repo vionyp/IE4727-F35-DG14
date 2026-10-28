@@ -16,6 +16,7 @@ $entry = my_queue()[$id] ?? null;
 $available = (int) $book['stock'] - (int) $book['on_loan'] - (int) $book['held'];
 $offered = $entry && $entry['status'] === 'offered';
 $canBorrow = !$loan && ($offered || (!$entry && $available > 0));
+$blocks = $canBorrow ? borrow_blocks((int) $user['id']) : [];
 
 // Offered members must borrow within their hold; everyone else may choose up to a week ahead.
 $dates = collection_dates();
@@ -70,6 +71,23 @@ require __DIR__ . '/includes/header.php';
       </div>
     </section>
 
+    <?php elseif ($blocks): ?>
+    <section class="panel" aria-labelledby="paused-title">
+      <h2 id="paused-title" class="panel-title">New loans are paused for now</h2>
+      <ul class="rules-list" role="list">
+        <?php foreach ($blocks as $reason): ?>
+        <li><?= icon('lock', 18) ?> <?= e($reason) ?></li>
+        <?php endforeach; ?>
+      </ul>
+      <?php if ($offered): ?>
+      <p class="small muted">Your held copy stays reserved for you until <?= e(long_date(hold_until($entry))) ?>.</p>
+      <?php endif; ?>
+      <div class="cluster">
+        <a class="btn btn-primary" href="<?= e(url('account.php#loans')) ?>">See your loans</a>
+        <a class="btn btn-secondary" href="<?= e(book_url((int) $book['id'])) ?>">Back to the book</a>
+      </div>
+    </section>
+
     <?php elseif (!$canBorrow): ?>
     <section class="panel" aria-labelledby="out-title">
       <h2 id="out-title" class="panel-title"><?= (int) $book['stock'] > 0 ? 'Every copy is out right now' : 'We have no copies yet' ?></h2>
@@ -107,8 +125,8 @@ require __DIR__ . '/includes/header.php';
       </div>
       <ul class="rules-list" role="list">
         <li><?= icon('clock', 18) ?> The loan lasts <?= LOAN_DAYS ?> days from the day you collect.</li>
-        <li><?= icon('return', 18) ?> Return it early whenever you like, from My Account or at the desk.</li>
-        <li><?= icon('lock', 18) ?> Late returns cost <?= money(LATE_FEE_PER_DAY) ?> for every day after the due date.</li>
+        <li><?= icon('return', 18) ?> Return it early whenever you like, from My Account or at the desk. Need longer? Renew it <?= MAX_RENEWALS === 1 ? 'once' : MAX_RENEWALS . ' times' ?> from My Account if nobody is waiting for it.</li>
+        <li><?= icon('lock', 18) ?> Late returns cost <?= money(LATE_FEE_PER_DAY) ?> for every day after the due date. While a book is overdue, or fees reach <?= money(FEE_BLOCK_LIMIT) ?>, new loans pause. Up to <?= MAX_LOANS ?> books at a time.</li>
       </ul>
       <button class="btn btn-primary btn-block btn-lg" type="submit">Confirm loan</button>
     </form>

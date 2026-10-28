@@ -142,7 +142,7 @@ Swipe gestures were implemented with Pointer Events (40px threshold) and the sam
 
 | ID | Req | Feature | Input data | Expected output | Method | Actual result | Result |
 |---|---|---|---|---|---|---|---|
-| T31 | AR-S5 | Member opens admin | Aisha requests `admin.php` | Refused, redirected with message | E2E | 303 to home, "That page is for library staff only." | Pass |
+| T31 | AR-S5 | Member opens admin | Aisha requests `admin.php` | Refused, quietly sent home | E2E | 303 to home, no admin content, no error message | Pass |
 | T32 | AR-S5 | Visitor posts to add book | POST `process/add-book.php` signed out | Sent to sign in, nothing saved | E2E | 303 to `sign-in.php`, no new row | Pass |
 | T33 | AR-S3 | CSRF | POST `process/shelf.php` without token | Rejected, nothing saved | E2E | 303 with "session expired" message, shelf unchanged | Pass |
 | T33b | AR-S2 | Private folders | GET `config/config.php`, `storage/mail.log` | Blocked | E2E | 403 and 403 | Pass |
@@ -237,3 +237,22 @@ The full end to end suite is now **58 checks, all passing** (64, minus Paige's 7
 | T92 | FR-44 | Freeze and click steps | Click outside the highlight, then the highlight, through all 9 steps | Outside clicks do nothing (card shakes); highlight moves the tour on across pages; no loan is created | Manual, browser | Not yet run | Pending |
 | T93 | FR-44, AR-U7 | Skip | Skip tour, Skip for now, Escape | Tour ends at once and does not come back on the next page | Manual, browser | Not yet run | Pending |
 | T94 | FR-44, AR-A2 | Keyboard and phone | Tab through a step; 390px wide | Focus stays in the target and card; card docks to an edge, tab bar items highlighted | Manual, browser | Not yet run | Pending |
+
+### Borrowing limits, renewals, reminders and settling fees (28 October 2026)
+
+From the run of `tools/e2e-test.php` on 28 October 2026: **69 of 69 checks passed, 0 PHP errors**,
+including every earlier check. A fresh member ("Test Six") and books nobody had on loan were used.
+
+| ID | Req | Feature | Input data | Expected output | Method | Actual result | Result |
+|---|---|---|---|---|---|---|---|
+| T95 | FR-46 | Renew | Borrow today, renew, renew again | Due date +28 days, `renewals` 1, emailed; second renewal refused | E2E | Due 25 Nov, renewals 1, "Loan renewed" logged; "It has already been renewed once, the most allowed." | Pass |
+| T96 | FR-46 | Renew while someone waits | Another member queues for the only copy | Refused, due date unchanged | E2E | "Someone is waiting for this book, so it cannot be renewed." | Pass |
+| T97 | FR-46 | Renew an overdue loan | Loan moved to 1 day overdue | Refused | E2E | "It is overdue, so it cannot be renewed. Please return it." | Pass |
+| T98 | FR-45 | Overdue blocks borrowing | Member with 1 overdue book borrows another | Refused, no loan saved, Borrow page explains | E2E | "You have 1 overdue book. Return it first, then you can borrow again."; "New loans are paused" on `borrow.php` | Pass |
+| T99 | FR-45 | Fees block borrowing | Return the overdue book 10 days late (S$5.00), borrow | Refused | E2E | "You owe S$5.00 in late fees. New loans stop from S$5.00 until the fees are settled at the front desk." | Pass |
+| T100 | FR-49 | Settle a book still out | Admin marks the fee of an unreturned loan paid | Refused, nothing saved | E2E | "Mindset is still out, so its fee is still growing. Settle it once the book is returned." | Pass |
+| T101 | FR-49, FR-45 | Settle a fee | Admin marks the S$5.00 fee paid, then again; member borrows | Paid once, receipt emailed, member owes S$0 and can borrow | E2E | "Marked S$5.00 as paid for Test Six"; "already marked as paid"; "Late fee paid" logged; "Borrowed." | Pass |
+| T102 | FR-45 | Loan limit | Member with 6 open loans borrows a 7th | Refused | E2E | 6 open loans; "You have 6 books on loan, the most a member can hold at once is 6." | Pass |
+| T103 | FR-47 | Due today reminder | Loan moved to be due today | Named on My Account and Home | E2E | "Rich Dad Poor Dad is due today" on both pages | Pass |
+| T104 | FR-48 | Approval email | Admin approves Aisha's submission | Aisha emailed | E2E | "Your book is in the library" logged for aisha@localhost; flash "Aisha has been emailed." | Pass |
+| T105 | FR-48 | Rejection email | Admin rejects a second submission | Status `rejected`, Aisha emailed | E2E | "Your book suggestion" logged; "The Test of Patience was rejected. Aisha has been emailed." | Pass |

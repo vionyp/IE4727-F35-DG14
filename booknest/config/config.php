@@ -40,6 +40,10 @@ define('LOAN_DAYS', 14);               // a loan runs 14 days from the collectio
 define('COLLECT_AHEAD_DAYS', 7);       // the collection date can be today up to 7 days ahead
 define('QUEUE_HOLD_DAYS', 2);          // the next reader in a queue has 2 days to borrow a returned copy
 define('LATE_FEE_PER_DAY', 0.50);      // in SGD, for every day after the due date
+define('MAX_LOANS', 6);                // open loans (reserved, out or overdue) a member may hold at once
+define('FEE_BLOCK_LIMIT', 5.00);       // unpaid late fees from this amount stop new loans until settled at the desk
+define('MAX_RENEWALS', 1);             // times a loan can be extended by another LOAN_DAYS
+define('DUE_SOON_DAYS', 2);            // loans due within this many days get a reminder on Home and My Account
 
 // Mail: only local accounts on the XAMPP mail server (Mercury) may receive email.
 define('MAIL_LOCAL_DOMAIN', '@localhost');

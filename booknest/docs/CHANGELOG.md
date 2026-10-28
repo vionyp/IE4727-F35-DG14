@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-10-28: Borrowing limits, renewals, reminders, settling fees, submission emails (Viony)
+
+Extends F5 Borrowing, F8 Add books and F9 Admin. No new feature number and no new page: the site
+still has 10 features and 10 pages.
+
+- **Borrowing limits (FR-45):** new loans pause while a member has an overdue book, already holds
+  6 open loans (`MAX_LOANS`), or owes S$5.00 or more in unpaid fees (`FEE_BLOCK_LIMIT`). Checked by
+  `borrow_blocks()` inside the borrowing transaction, after the member row is locked, so two quick
+  requests cannot pass the limit together. Borrow, the book page and My Account explain which rule
+  applies. Joining a queue still works.
+- **Renewals (FR-46):** "Renew to [date]" on My Account adds another 14 days, once per loan
+  (`MAX_RENEWALS`), unless the loan is overdue or someone is waiting. Uses the `renewals` column that
+  was already in the schema. `renew_problem()` is the single rule used by both the page and the
+  server; `renew_loan()` locks the book row so nobody can join the queue mid-renewal. Emailed.
+- **Reminders (FR-47):** loans due today or within 2 days (`DUE_SOON_DAYS`) are named on Home and
+  My Account; overdue loans are named on Home. Shown on the page, no scheduler needed.
+- **Settling fees (FR-49):** new "Late fees to settle" table on the admin dashboard lists unpaid
+  fees on returned books, with "Mark as paid". This sets `fee_cleared_at` (the column existed but
+  nothing wrote it) and emails a receipt. Loans still out are refused, because their fee is still
+  growing.
+- **Submission emails (FR-48):** approving or rejecting a member's book now emails that member.
+- Files: `includes/loans.php`, `process/loan.php`, `process/admin-action.php`, `account.php`,
+  `admin.php`, `borrow.php`, `book.php`, `index.php`, `config/config.php` (four new lending
+  constants), `assets/css/pages.css` (two notice styles). No schema change, no AJAX, JSON or libraries.
+- Tests T95 to T105 added to `tools/e2e-test.php`; e2e **69 of 69**, 0 PHP errors.
+
 ## 2026-10-28: Onboarding tour for new members, part of F7 Accounts (Mathew)
 
 Added to F7 (registration), not as an eleventh feature, so the site still has 10 features.
