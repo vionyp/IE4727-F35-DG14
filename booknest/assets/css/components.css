@@ -590,3 +590,90 @@ body { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
   .tabbar { display: none; }
   body { padding-bottom: 0; }
 }
+
+/* Onboarding tour ------------------------------------------------------------------ */
+/* A dim layer with a cut out around the step's target. Only the target (on click steps)
+   and the tour card take clicks; everything else is frozen until the member moves on or skips. */
+.tour { position: fixed; inset: 0; z-index: 1000; pointer-events: none; }
+.tour-shade, .tour-lid { position: fixed; pointer-events: auto; }
+.tour-shade { background: rgba(6, 8, 12, .76); }
+.tour-lid { background: transparent; cursor: not-allowed; }
+.tour-ring {
+  position: fixed;
+  border-radius: 12px;
+  box-shadow: 0 0 0 2px var(--accent), 0 0 0 7px rgba(var(--glow-amber), .2), 0 0 32px rgba(var(--glow-amber), .35);
+  pointer-events: none;
+}
+.tour-pop {
+  position: fixed;
+  width: min(380px, calc(100vw - 32px));
+  padding: var(--s5);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--panel-fill);
+  box-shadow: var(--shadow-lg), 0 0 0 1px rgba(var(--glow-amber), .08);
+  color: var(--text);
+  pointer-events: auto;
+}
+.tour-pop:focus { outline: none; }
+.tour-pop.is-center { top: 50%; left: 50%; width: min(440px, calc(100vw - 32px)); transform: translate(-50%, -50%); padding: var(--s6) var(--s5) var(--s5); }
+.tour-top { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); }
+.tour-count { margin: 0; color: var(--muted); font-size: .78rem; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+.is-center .tour-count { color: var(--accent); }
+.tour-skip {
+  min-height: 32px;
+  padding: 0 .2rem;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--step--1);
+  font-weight: 600;
+  cursor: pointer;
+}
+.tour-skip:hover { color: var(--text); text-decoration: underline; text-underline-offset: .2em; }
+.tour-bar { height: 4px; margin: var(--s3) 0 var(--s4); overflow: hidden; border-radius: 4px; background: var(--border); }
+.tour-bar span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent), var(--teal)); }
+.tour-title { margin: 0 0 var(--s2); font-family: var(--font-display); font-size: var(--step-1); line-height: 1.3; color: var(--gold); }
+.is-center .tour-title { margin-top: var(--s2); font-size: var(--step-2); }
+.tour-text { margin: 0; color: var(--text); opacity: .88; line-height: 1.6; }
+.tour-hint {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: var(--s4) 0 0;
+  padding: .55rem .75rem;
+  border: 1px solid rgba(var(--glow-amber), .3);
+  border-radius: var(--radius);
+  background: rgba(var(--glow-amber), .08);
+  color: var(--gold);
+  font-size: var(--step--1);
+  font-weight: 600;
+}
+.tour-hint svg { flex: none; }
+.tour-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--s2); margin-top: var(--s5); }
+.tour-actions:not(:has(button:not([hidden]))) { display: none; }
+.tour.is-leaving .tour-pop, .tour.is-leaving .tour-ring { opacity: 0; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .tour-shade, .tour-ring, .tour-lid { transition: top var(--med) var(--ease), left var(--med) var(--ease), width var(--med) var(--ease), height var(--med) var(--ease); }
+  .tour-pop { transition: top var(--med) var(--ease), left var(--med) var(--ease), opacity var(--fast); animation: tour-in var(--med) var(--ease); }
+  .tour-bar span { transition: width var(--med) var(--ease); }
+  .tour.is-click .tour-ring { animation: tour-pulse 1.8s ease-in-out infinite; }
+  .tour-pop.is-nudge { animation: tour-nudge .4s var(--ease); }
+}
+@keyframes tour-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes tour-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px var(--accent), 0 0 0 7px rgba(var(--glow-amber), .2), 0 0 32px rgba(var(--glow-amber), .35); }
+  50% { box-shadow: 0 0 0 2px var(--accent-hover), 0 0 0 12px rgba(var(--glow-amber), .1), 0 0 44px rgba(var(--glow-amber), .5); }
+}
+/* "translate" (not "transform") so the shake also works on the centred card. */
+@keyframes tour-nudge {
+  0%, 100% { translate: 0; }
+  25% { translate: -6px 0; }
+  50% { translate: 5px 0; }
+  75% { translate: -3px 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tour-pop.is-nudge { box-shadow: var(--shadow-lg), 0 0 0 2px var(--accent); }
+}

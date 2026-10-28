@@ -157,6 +157,7 @@ an online library (see `CHANGELOG.md`). Constants live in `config/config.php`.
 | FR-32 | Users can sign in, optionally remember their email, and sign out. |
 | FR-33 | My Account shows loans (due dates, fees, return), queue places, recent returns, upcoming bookings, My Shelf and book submissions. |
 | FR-34 | Members can save books to and remove books from My Shelf. |
+| FR-44 | A new member is offered a short guided tour straight after registering: find a book, open it, borrow it, see My loans, return. Each step highlights one element and freezes the rest of the page; click steps continue only when the highlighted element is clicked. Skip tour (or Escape) ends it at any time, and it can be replayed from My Account. The tour never borrows anything. |
 
 ### F8 Add and search books
 

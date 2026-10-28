@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-10-28: Onboarding tour for new members, part of F7 Accounts (Mathew)
+
+Added to F7 (registration), not as an eleventh feature, so the site still has 10 features.
+
+- **When:** straight after registering (`process/register.php` sets a one time session flag; the
+  header passes it to the page). Members can replay it from My Account ("Take the tour").
+- **Steps (9, plus a welcome and a closing card):** Browse, pick a book that is on the shelf, the
+  book's actions, Borrow, the collection date, Confirm loan, My loans, returning a book, Study Rooms.
+- **Freeze:** a dim layer covers the page with a cut out around the highlighted element. On click
+  steps only that element works; on information steps nothing on the page works and the card has
+  Next. Clicking a frozen area gently shakes the card. Tab stays inside the target and the card.
+- **Skip:** "Skip tour" on every step, "Skip for now" on the welcome card, and Escape. The tour
+  never confirms a loan for the member: the Confirm loan button is paused during its step.
+- **Across pages:** progress is a small cookie (`bn_tour`, `TOUR_COOKIE` in `config/config.php`)
+  holding only a step number; anything else is ignored. Signing out deletes it. If the member
+  leaves the tour's path, a "Tour paused" card offers to continue or end it.
+- Phones: the card docks to the top or bottom edge and the tab bar items are used as targets.
+- Respects `prefers-reduced-motion`. Without JavaScript nothing changes (progressive enhancement).
+- Files: new `assets/js/tour.js`; tour styles at the end of `components.css` (still four
+  stylesheets); small changes to `includes/header.php`, `process/register.php`,
+  `process/logout.php`, `account.php`, `config/config.php`. No AJAX, JSON or libraries.
+- Tests T91 to T94 added to `TEST_LOG.md` as manual browser checks, still to be run.
+
 ## 2026-10-21: Paige removed; back to 10 features (Mathew)
 
 The brief allows 10 features, so the help assistant is gone. (A guided tour was built on
