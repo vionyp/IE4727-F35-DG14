@@ -8,6 +8,7 @@ $_SESSION = [];
 $params = session_get_cookie_params();
 setcookie(session_name(), '', ['expires' => time() - 3600, 'path' => $params['path'], 'httponly' => true, 'samesite' => 'Lax']);
 session_destroy();
+setcookie(TOUR_COOKIE, '', ['expires' => time() - 3600, 'path' => BASE_URL]);  // an unfinished tour ends with the session
 
 session_start();
 session_regenerate_id(true);

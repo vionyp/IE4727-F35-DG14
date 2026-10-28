@@ -40,6 +40,7 @@ require __DIR__ . '/includes/header.php';
       <?php if ($user['role'] === 'admin'): ?>
       <a class="btn btn-secondary" href="<?= e(url('admin.php')) ?>"><?= icon('chart', 18) ?> Admin dashboard</a>
       <?php endif; ?>
+      <button type="button" class="btn btn-ghost" data-tour-replay hidden><?= icon('compass', 18) ?> Take the tour</button>
       <form action="<?= e(url('process/logout.php')) ?>" method="post">
         <?= csrf_field() ?>
         <button class="btn btn-ghost" type="submit">Sign out</button>

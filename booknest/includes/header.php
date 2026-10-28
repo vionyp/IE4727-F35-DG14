@@ -12,6 +12,9 @@ if (is_admin()) {
     $nav[] = ['admin.php', 'Admin'];
 }
 $searchValue = is_page('catalogue.php') ? input($_GET, 'q', 100) : '';
+// The onboarding tour runs for members only; a new registration starts it once.
+$tourNew = $user && !empty($_SESSION['tour_new']);
+unset($_SESSION['tour_new']);
 ?>
 <!doctype html>
 <html lang="en-SG" class="no-js">
@@ -31,11 +34,14 @@ $searchValue = is_page('catalogue.php') ? input($_GET, 'q', 100) : '';
 <link rel="stylesheet" href="<?= e(asset('css/print.css')) ?>" media="print">
 <script>document.documentElement.className = 'js';</script>
 <script src="<?= e(asset('js/nav.js')) ?>" defer></script>
+<?php if ($user): ?>
+<script src="<?= e(asset('js/tour.js')) ?>" defer></script>
+<?php endif; ?>
 <?php foreach ($scripts as $s): ?>
 <script src="<?= e(asset('js/' . $s)) ?>" defer></script>
 <?php endforeach; ?>
 </head>
-<body class="<?= e($body_class) ?>">
+<body class="<?= e($body_class) ?>"<?php if ($user): ?> data-tour="member" data-tour-cookie="<?= e(TOUR_COOKIE) ?>" data-base="<?= e(BASE_URL) ?>"<?= $tourNew ? ' data-tour-new' : '' ?><?php endif; ?>>
 <a class="skip-link" href="#main">Skip to content</a>
 <header class="site-header">
   <div class="container header-inner">

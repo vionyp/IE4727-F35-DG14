@@ -228,3 +228,12 @@ simulated mid range phone. It is still fast on a real laptop.
 | T90 | none | Paige removed | POST to `process/assistant.php`; page markup; tables | 404, no assistant markup, no `assistant_log` table | E2E | HTTP 404, none, none | Pass |
 
 The full end to end suite is now **58 checks, all passing** (64, minus Paige's 7, plus T90).
+
+### Onboarding tour (28 October 2026)
+
+| ID | Req | Feature | Input data | Expected output | Method | Actual result | Result |
+|---|---|---|---|---|---|---|---|
+| T91 | FR-44 | Tour starts after registering | Register a new account | Welcome card over a dimmed page; existing members signing in see no tour | Manual, browser | Not yet run | Pending |
+| T92 | FR-44 | Freeze and click steps | Click outside the highlight, then the highlight, through all 9 steps | Outside clicks do nothing (card shakes); highlight moves the tour on across pages; no loan is created | Manual, browser | Not yet run | Pending |
+| T93 | FR-44, AR-U7 | Skip | Skip tour, Skip for now, Escape | Tour ends at once and does not come back on the next page | Manual, browser | Not yet run | Pending |
+| T94 | FR-44, AR-A2 | Keyboard and phone | Tab through a step; 390px wide | Focus stays in the target and card; card docks to an edge, tab bar items highlighted | Manual, browser | Not yet run | Pending |

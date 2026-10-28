@@ -38,5 +38,6 @@ if ($errors) {
 db_exec("INSERT INTO users (full_name, email, password_hash, role) VALUES (?, ?, ?, 'member')",
     [$name, $email, password_hash($password, PASSWORD_DEFAULT)]);
 sign_in_user(db_insert_id());
+$_SESSION['tour_new'] = true;  // the onboarding tour starts on the next page
 flash('success', 'Welcome to ' . SITE_NAME . ', ' . explode(' ', $name)[0] . '. You can now borrow books, book study rooms and keep a shelf.');
 redirect($return);

@@ -47,4 +47,5 @@ define('MAIL_FROM', 'postmaster@localhost'); // must be an existing Mercury mail
 // Cookies
 define('RECENT_COOKIE', 'bn_recent');
 define('EMAIL_COOKIE', 'bn_email');
+define('TOUR_COOKIE', 'bn_tour');  // onboarding tour progress, written by assets/js/tour.js
 define('RECENT_LIMIT', 6);
