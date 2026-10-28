@@ -16,8 +16,9 @@ define('STORAGE_PATH', APP_ROOT . '/storage');
 define('DEBUG', false);
 
 // Team credits shown in the footer
-define('TEAM_NAMES', 'Mathew Prajogo');
+define('TEAM_NAMES', 'Mathew Prajogo and Viony Prajogo');
 define('TEAM_EMAIL', 'mathew@prajogo.com');
+define('TEAM_EMAIL_2', 'vionyprajogo123@gmail.com');
 
 // Sessions
 define('SESSION_IDLE_SECONDS', 30 * 60);

@@ -28,7 +28,7 @@ $status = library_status();
     <section aria-labelledby="footer-about">
       <h2 id="footer-about">About this project</h2>
       <p>Built by <?= e(TEAM_NAMES) ?> for IE4727 Web Application Design.</p>
-      <p>Questions? Write to <a href="mailto:<?= e(TEAM_EMAIL) ?>"><?= e(TEAM_EMAIL) ?></a>.</p>
+      <p>Questions? Write to <a href="mailto:<?= e(TEAM_EMAIL) ?>"><?= e(TEAM_EMAIL) ?></a> or <a href="mailto:<?= e(TEAM_EMAIL_2) ?>"><?= e(TEAM_EMAIL_2) ?></a>.</p>
       <p>The logo, illustrations and room plans are original artwork made for this site.</p>
     </section>
   </div>

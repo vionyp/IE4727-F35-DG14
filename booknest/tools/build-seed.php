@@ -452,6 +452,33 @@ $shelf = [[$aisha, 1], [$aisha, 13], [$aisha, 25], [$aisha, 32], [$ben, 7], [$be
 $sql[] = "INSERT INTO shelf (user_id, book_id, added_at) VALUES\n  "
     . implode(",\n  ", array_map(fn($s) => "({$s[0]}, {$s[1]}, NOW() - INTERVAL " . ($s[1] % 9) . ' DAY)', $shelf)) . ";\n";
 
+// Budy: a demo member with every loan state on one account. Kept apart from the generated data
+// above and free of mt_rand, so adding him does not change anyone else's rows.
+$budy = count($users) + 1;
+$sql[] = "-- Budy (budy@gmail.com / budy123!): overdue loans, a loan due today, ongoing loans and a paid late return.";
+$sql[] = "INSERT INTO users (id, full_name, email, password_hash, role, created_at) VALUES\n  "
+    . "($budy, 'budy', 'budy@gmail.com', " . q(password_hash('budy123!', PASSWORD_DEFAULT)) . ", 'member', NOW() - INTERVAL 60 DAY);\n";
+$budyLoans = [
+    // [title, collected (days from today), returned (null = still out), status, fee paid (days from today)]
+    ['The Great Gatsby', -57, -39, 'returned', -39],   // returned 4 days late, S$2.00 paid
+    ['Gone Girl', -24, null, 'overdue', null],         // 10 days overdue, S$5.00
+    ['The Martian', -17, null, 'overdue', null],       // 3 days overdue, S$1.50
+    ['Deep Work', -14, null, 'active', null],          // due today, last day before fees
+    ['The Hobbit', -7, null, 'active', null],          // due in 7 days
+    ['Educated', -2, null, 'active', null],            // due in 12 days
+    ['Atomic Habits', -1, null, 'active', null],       // due in 13 days
+];
+$rows = [];
+foreach ($budyLoans as [$title, $collect, $returned, $status, $paid]) {
+    $rows[] = "($budy, {$bookId[$title]}, " . day_sql($collect) . ', ' . day_sql($collect) . ' + INTERVAL ' . LOAN_DAYS . ' DAY, '
+        . ($returned === null ? 'NULL' : day_sql($returned)) . ", '$status', "
+        . ($paid === null ? 'NULL' : 'NOW() - INTERVAL ' . (-$paid) . ' DAY') . ', NOW() - INTERVAL ' . (1 - $collect) . ' DAY)';
+}
+$sql[] = "INSERT INTO loans (user_id, book_id, collection_date, due_date, returned_date, status, fee_cleared_at, created_at) VALUES\n  "
+    . implode(",\n  ", $rows) . ";\n";
+$sql[] = "INSERT INTO book_queue (book_id, user_id, queued_at, status, offered_at) VALUES\n  "
+    . "({$bookId['Project Hail Mary']}, $budy, NOW() - INTERVAL 1 DAY, 'waiting', NULL);\n";
+
 file_put_contents(APP_ROOT . '/sql/seed.sql', implode("\n", $sql));
 
 // Converts minutes after midnight to "HH:MM".
