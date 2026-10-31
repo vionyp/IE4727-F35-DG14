@@ -48,7 +48,9 @@ class Tab {
       // "Failed to load resource: 422" is Chrome reporting an HTTP refusal, not a script error; keep it apart.
       (p.entry.source === 'network' ? this.refusals : this.errors).push(p.entry.text + ' ' + (p.entry.url || ''));
     });
-    cdp.on('Network.requestWillBeSent', (p) => this.requests.push({ url: p.request.url, method: p.request.method, at: Date.now() }));
+    cdp.on('Network.requestWillBeSent', (p) => this.requests.push({ id: p.requestId, url: p.request.url, method: p.request.method, at: Date.now() }));
+    this.cancelled = [];
+    cdp.on('Network.loadingFailed', (p) => { if (p.canceled) this.cancelled.push(p.requestId); });
   }
   // Opens a page; options: js (default true), block (URL patterns that fail to load).
   async go(path, { js = true, block = [] } = {}) {
@@ -468,7 +470,38 @@ async function roomsTests(browser) {
   await noVue.close();
 }
 
-const groups = { search: searchTests, loans: loansTests, rooms: roomsTests };
+// ---- 4. The shared useFetch() composable ------------------------------------------------------------
+async function composableTests(browser) {
+  const t = await Tab.open(browser);
+  await t.login('budy@gmail.com', 'budy123!');
+  const found = [];
+  for (const [page, ready] of [['catalogue.php', '.vs .card'], ['account.php', '.vl .loan-item'], ['rooms.php', '.vr-grid li']]) {
+    await t.go(page);
+    const ok = await t.waitFor(`!!document.querySelector(${JSON.stringify(ready)})`, 8000);
+    found.push(page + ': ' + (ok && await t.eval(`typeof window.BookNestVue.useFetch === 'function' && !!document.querySelector('script[src*="vue/use-fetch.js"]')`)));
+  }
+  check('E01', 'useFetch() composable is loaded and used on all three pages', found.every((x) => x.endsWith('true')), found.join(', '));
+
+  await t.go('catalogue.php');
+  await t.waitFor('!!document.querySelector(".vs .card")', 8000);
+  // A slow network (500 ms per request) so the first search is still on its way when the second starts.
+  await t.cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 500, downloadThroughput: -1, uploadThroughput: -1 });
+  const since = Date.now();
+  await t.type('#vs-q', 'th', 0);
+  await t.key('Enter');
+  await t.type('#vs-q', 'the hob', 0);   // replaces the text and searches again at once
+  await t.key('Enter');
+  await t.waitFor('document.querySelectorAll(".vs .card").length === 1', 6000);
+  await t.cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+  const sent = t.apiCalls('books.php', since);
+  const cancelled = sent.filter((r) => t.cancelled.includes(r.id)).map((r) => new URL(r.url).searchParams.get('q'));
+  const shown = await t.eval('[...document.querySelectorAll(".vs .card-title")].map(x => x.textContent).join(", ")');
+  check('E02', 'useFetch(): a newer search cancels the older request', cancelled.includes('th') && shown === 'The Hobbit' && t.errors.length === 0,
+    `${sent.length} requests, cancelled: ${cancelled.join(', ') || 'none'}; shown: ${shown}; JS errors: ${t.errors.length}`);
+  await t.close();
+}
+
+const groups = { search: searchTests, loans: loansTests, rooms: roomsTests, composable: composableTests };
 
 // Starts Edge, runs the chosen groups, prints a summary and exits with 0 only if all passed.
 async function main() {

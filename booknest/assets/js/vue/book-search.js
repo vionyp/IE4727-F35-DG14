@@ -10,7 +10,8 @@
 //   if the first load fails (the Base grid stays), and 'searched' each time a search finishes.
 // - ref(): reactive state (query, category, books...). Changing a ref re-renders what uses it.
 // - watch() with a 300 ms debounce: typing does not call the server on every key; the request is
-//   sent 300 ms after the last change, and an older request still on its way is cancelled.
+//   sent 300 ms after the last change, and an older request still on its way is cancelled
+//   (by the useFetch() composable from use-fetch.js, shared with the other two Vue screens).
 // - computed(): visibleBooks is derived from the books plus the category, availability and sort
 //   filters; it recalculates by itself when any of them change, with no extra request.
 // - v-model: two-way binding of the search box, sort select and "on the shelf" checkbox.
@@ -71,16 +72,14 @@
       var searchedFor = Vue.ref(props.initialQuery);
       var started = false;
       var timer = 0;
-      var controller = null;
+      var request = api.useFetch();   // composable (use-fetch.js): cancels the older search by itself
 
-      // Asks api/books.php for the books matching q; cancels the previous request first.
+      // Asks api/books.php for the books matching q.
       function load(q) {
-        if (controller) { controller.abort(); }
-        controller = window.AbortController ? new AbortController() : null;
-        var mine = controller;
         loading.value = true;
-        api.requestJson('api/books.php', { query: { q: q }, signal: mine ? mine.signal : undefined })
+        request.run('api/books.php', { query: { q: q } })
           .then(function (res) {
+            if (!res) { return; }   // a newer search replaced this one
             if (!res.ok) { throw new Error(res.data.error || 'Search failed.'); }
             books.value = res.data.books;
             categories.value = res.data.categories;
@@ -93,8 +92,7 @@
             ctx.emit('searched', q);
             if (!started) { started = true; ctx.emit('ready'); }
           })
-          .catch(function (err) {
-            if (err && err.name === 'AbortError') { return; }
+          .catch(function () {
             loading.value = false;
             if (!started) { ctx.emit('failed'); return; }
             error.value = 'Live search is not available right now. Use the search box at the top of the page instead.';
