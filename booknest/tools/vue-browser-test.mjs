@@ -38,13 +38,15 @@ class Tab {
   }
   constructor(cdp) {
     this.cdp = cdp;
-    this.errors = [];
+    this.errors = [];          // JavaScript exceptions and console.error calls
+    this.refusals = [];        // the browser's own network log lines for 4xx/5xx answers
     this.requests = [];
     cdp.on('Runtime.exceptionThrown', (p) => this.errors.push(p.exceptionDetails.exception?.description || p.exceptionDetails.text));
     cdp.on('Runtime.consoleAPICalled', (p) => { if (p.type === 'error') this.errors.push(p.args.map((a) => a.value ?? a.description).join(' ')); });
     cdp.on('Log.entryAdded', (p) => {
-      // A request we blocked on purpose is expected to fail; anything else is a real error.
-      if (p.entry.level === 'error' && !/ERR_BLOCKED_BY_CLIENT/.test(p.entry.text)) this.errors.push(p.entry.text + ' ' + (p.entry.url || ''));
+      if (p.entry.level !== 'error' || /ERR_BLOCKED_BY_CLIENT/.test(p.entry.text)) return;   // blocked on purpose
+      // "Failed to load resource: 422" is Chrome reporting an HTTP refusal, not a script error; keep it apart.
+      (p.entry.source === 'network' ? this.refusals : this.errors).push(p.entry.text + ' ' + (p.entry.url || ''));
     });
     cdp.on('Network.requestWillBeSent', (p) => this.requests.push({ url: p.request.url, method: p.request.method, at: Date.now() }));
   }
@@ -93,9 +95,22 @@ class Tab {
   }
   // Clicks the centre of the first element matching the selector, with a real mouse event.
   async click(selector) {
-    const box = await this.eval(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null;
-      el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
-    if (!box) throw new Error('Nothing to click: ' + selector);
+    return this.clickEl(`document.querySelector(${JSON.stringify(selector)})`);
+  }
+  // Clicks the element that a JavaScript expression returns, with a real mouse event.
+  async clickEl(expression) {
+    // The site scrolls smoothly (and focus changes scroll too), so jump instantly, wait two frames and
+    // only click once the element really is the one under the pointer; retry while the page settles.
+    let box = null;
+    for (let i = 0; i < 20 && !box; i++) {
+      box = await this.eval(`new Promise((done) => { const el = ${expression}; if (!el) { done(null); return; }
+        el.scrollIntoView({ block: 'center', behavior: 'instant' });
+        requestAnimationFrame(() => requestAnimationFrame(() => { const r = el.getBoundingClientRect();
+          const x = r.left + r.width / 2, y = r.top + r.height / 2, hit = document.elementFromPoint(x, y);
+          done(hit && (hit === el || el.contains(hit)) ? { x, y } : null); })); })`);
+      if (!box) await sleep(100);
+    }
+    if (!box) throw new Error('Nothing to click: ' + expression);
     for (const type of ['mousePressed', 'mouseReleased']) {
       await this.cdp.send('Input.dispatchMouseEvent', { type, x: box.x, y: box.y, button: 'left', clickCount: 1 });
     }
@@ -242,7 +257,116 @@ async function searchTests(browser) {
   await noApi.close();
 }
 
-const groups = { search: searchTests };
+// ---- 2. My Loans panel on My Account --------------------------------------------------------------
+// Returns a JS expression for budy's loan row with this title in the Vue panel.
+const row = (title) => `[...document.querySelectorAll('.vl .loan-item')].find(li => li.querySelector('h3 a').textContent === ${JSON.stringify(title)})`;
+// Reads the three totals, the header badge and the "Books on loan" tile.
+const totals = `({ items: document.querySelectorAll('.vl .loan-item').length,
+  summary: [...document.querySelectorAll('.vl-summary li')].map(li => li.textContent.trim().replace(/\\s+/g, ' ')),
+  badge: document.querySelector('.loans-link .badge').textContent,
+  tile: [...document.querySelectorAll('.tile')].find(t => t.querySelector('.tile-label').textContent === 'Books on loan').querySelector('.tile-value').textContent,
+  feeTile: [...document.querySelectorAll('.tile')].find(t => t.querySelector('.tile-label').textContent === 'Late fees owed').querySelector('.tile-value').textContent,
+  blocks: document.querySelector('.vl .notice-alert')?.textContent || '' })`;
+
+async function loansTests(browser) {
+  // A second tab, signed in as the same member, opened first so that it goes stale.
+  const stale = await Tab.open(browser);
+  await stale.login('budy@gmail.com', 'budy123!');
+  await stale.go('account.php');
+  await stale.waitFor('!!document.querySelector(".vl .loan-item")', 8000);
+
+  const t = await Tab.open(browser);
+  const signedIn = await t.login('budy@gmail.com', 'budy123!');
+  await t.go('account.php');
+  const mounted = await t.waitFor('!!document.querySelector(".vl .loan-item")', 8000);
+  await t.shot('loans-desktop');
+  await t.shot('loans-phone', 390);
+  let s = await t.eval(totals);
+  const baseHidden = await t.eval(`[...document.querySelectorAll('#loans > [data-vue-replaced]')].every(el => el.hidden) && document.querySelectorAll('#loans > [data-vue-replaced]').length > 0`);
+  check('C01', 'Loans: panel mounts with computed totals', signedIn && mounted && baseHidden && s.items === 6 && s.summary[0] === '6 of 6 loans'
+    && s.summary[1] === 'S$8.50 late fees owed' && s.summary[2] === '1 due soon',
+    `${s.items} loans; ${s.summary.join(' | ')}; Base list hidden: ${baseHidden}`);
+
+  await t.eval('window.__samePage = "yes"');
+  let since = Date.now();
+  await t.clickEl(`${row('The Hobbit')}.querySelector('button.btn-secondary')`);
+  await t.waitFor(`(document.querySelector('.vl-message')?.textContent || '').startsWith('Renewed The Hobbit')`, 5000);
+  const hob = await t.eval(`({ text: ${row('The Hobbit')}.querySelector('.loan-body p').textContent.replace(/\\s+/g, ' ').trim(),
+    renewBtn: !!${row('The Hobbit')}.querySelector('button.btn-secondary'), msg: document.querySelector('.vl-message').textContent.trim(),
+    focus: document.activeElement === document.querySelector('.vl-message'), same: window.__samePage })`);
+  check('C02', 'Loans: Renew updates the row in place, no reload', hob.same === 'yes' && hob.text.includes('Renewed once.') && !hob.renewBtn
+    && t.apiCalls('loans.php', since).filter((r) => r.method === 'POST').length === 1 && hob.focus,
+    `"${hob.msg}" | row: "${hob.text.slice(0, 70)}..." | Renew button gone: ${!hob.renewBtn}, focus on message: ${hob.focus}`);
+
+  await t.clickEl(`[...${row('Atomic Habits')}.querySelectorAll('button')].find(b => b.textContent.trim() === 'Return')`);
+  const yesFocused = await t.waitFor(`(document.activeElement.id || '').startsWith('vl-yes-')`, 2000);
+  await t.clickEl(`${row('Atomic Habits')}.querySelector('[id^="vl-yes-"]')`);
+  const leaving = await t.waitFor(`!!document.querySelector('.vl .loan-item.loan-leave-active')`, 3000);
+  await t.waitFor(`!${row('Atomic Habits')}`, 3000);
+  s = await t.eval(totals);
+  const same = await t.eval('window.__samePage');
+  const msg = await t.eval(`document.querySelector('.vl-message').textContent.trim()`);
+  check('C03', 'Loans: Return asks first, row leaves with <transition-group>', yesFocused && leaving && same === 'yes' && s.items === 5
+    && msg === 'Returned Atomic Habits. Thank you for bringing it back on time.',
+    `confirm focused: ${yesFocused}, leave transition seen: ${leaving}, rows now ${s.items}, "${msg}"`);
+  check('C04', 'Loans: totals, header badge, tiles and pause reasons follow', s.summary[0] === '5 of 6 loans' && s.badge === '5' && s.tile === '5'
+    && s.feeTile === 'S$8.50' && !s.blocks.includes('books on loan'),
+    `${s.summary.join(' | ')}; badge ${s.badge}, tile ${s.tile}, fee tile ${s.feeTile}; "6 books" reason gone: ${!s.blocks.includes('books on loan')}`);
+
+  await stale.clickEl(`${row('The Hobbit')}.querySelector('button.btn-secondary')`);
+  await stale.waitFor(`!!document.querySelector('.vl-message')`, 5000);
+  await stale.waitFor(`!${row('Atomic Habits')}`, 3000);   // its leave transition takes 0.35 s
+  const st = await stale.eval(`({ msg: document.querySelector('.vl-message').textContent.trim(), cls: document.querySelector('.vl-message').className,
+    renew: !!${row('The Hobbit')}.querySelector('button.btn-secondary'), atomic: !!${row('Atomic Habits')} })`);
+  check('C05', 'Loans: server refusal shown as sent (stale second tab)', st.msg === 'Could not renew The Hobbit. It has already been renewed once, the most allowed.'
+    && st.cls.includes('notice-alert') && !st.renew && !st.atomic, `"${st.msg}"; list refreshed: Hobbit renew gone ${!st.renew}, Atomic Habits gone ${!st.atomic}`);
+  check('C06', 'Loans: no JavaScript errors (both tabs)', t.errors.length === 0 && stale.errors.length === 0, [...t.errors, ...stale.errors].join(' | ') || 'none');
+  await stale.close();
+
+  await t.eval(`document.querySelectorAll('input[name="csrf"]').forEach(i => { i.value = 'expired'; })`);
+  const eduBefore = await t.eval(`${row('Educated')}.querySelector('.loan-body p').textContent`);
+  await t.clickEl(`${row('Educated')}.querySelector('button.btn-secondary')`);
+  await t.waitFor(`(document.querySelector('.vl-message')?.textContent || '').includes('session expired')`, 5000);
+  const ex = await t.eval(`({ msg: document.querySelector('.vl-message').textContent.trim(), p: ${row('Educated')}.querySelector('.loan-body p').textContent,
+    renew: !!${row('Educated')}.querySelector('button.btn-secondary') })`);
+  check('C07', 'Loans: expired CSRF token, PHP refuses and nothing changes', ex.msg.startsWith('Your session expired before the form was sent') && ex.p === eduBefore && ex.renew,
+    `"${ex.msg}"; Educated unchanged: ${ex.p === eduBefore}`);
+
+  await t.cdp.send('Network.deleteCookies', { name: 'bn_session', url: SITE });
+  await t.clickEl(`[...${row('Educated')}.querySelectorAll('button')].find(b => b.textContent.trim() === 'Return')`);
+  await t.clickEl(`${row('Educated')}.querySelector('[id^="vl-yes-"]')`);
+  await t.waitFor(`(document.querySelector('.vl-message')?.textContent || '').includes('sign in')`, 5000);
+  const out = await t.eval(`({ msg: document.querySelector('.vl-message').textContent.trim(), link: document.querySelector('.vl-message a')?.getAttribute('href'),
+    still: !!${row('Educated')} })`);
+  check('C08', 'Loans: signed out meanwhile, PHP answers 401 and the row stays', out.msg.startsWith('Please sign in again') && out.link === '/booknest/sign-in.php' && out.still,
+    `"${out.msg}", link ${out.link}, Educated still listed: ${out.still}`);
+  check('C09', 'Loans: no JavaScript errors after the refusals', t.errors.length === 0, t.errors.join(' | ') || 'none');
+  const refused = [...t.refusals].map((x) => (x.match(/status of (\d+)/) || [])[1] + ' ' + (x.includes('/api/loans.php') ? 'api/loans.php' : x));
+  check('C09b', 'Loans: only the expected refusals reached the network log', refused.length === 2 && refused[0] === '403 api/loans.php' && refused[1] === '401 api/loans.php',
+    refused.join(', ') || 'none');
+  await t.close();
+
+  const off = await Tab.open(browser);
+  await off.login('budy@gmail.com', 'budy123!');
+  await off.go('account.php', { js: false });
+  const html = await off.html();
+  check('C10', 'Loans: JavaScript off, the PHP list and forms work', !html.includes('class="vl"') && (html.match(/<li class="loan-item/g) || []).length >= 4
+    && html.includes('value="renew"') && html.includes('value="return"'), `${(html.match(/<li class="loan-item/g) || []).length} PHP rows with renew and return forms, no Vue markup`);
+  await off.close();
+
+  const noVue = await Tab.open(browser);
+  await noVue.login('budy@gmail.com', 'budy123!');
+  await noVue.go('account.php', { block: ['*vue.global.prod.js*'] });
+  await sleep(600);
+  const nv = await noVue.eval(`({ vl: !!document.querySelector('.vl'), rows: document.querySelectorAll('#loans .loan-item').length })`);
+  await noVue.clickEl(`[...document.querySelectorAll('#loans .loan-item')].find(li => li.querySelector('h3 a').textContent === 'Deep Work').querySelector('button[type="submit"]')`);
+  await noVue.waitFor(`!!document.querySelector('.flash')`, 6000);
+  const flash = await noVue.eval(`document.querySelector('.flash p')?.textContent || ''`);
+  check('C11', 'Loans: Vue blocked, the Base Renew form still works', !nv.vl && nv.rows >= 4 && flash.startsWith('Renewed Deep Work'), `Vue app: ${nv.vl}, ${nv.rows} PHP rows; after the Base form: "${flash.slice(0, 60)}..."`);
+  await noVue.close();
+}
+
+const groups = { search: searchTests, loans: loansTests };
 
 // Starts Edge, runs the chosen groups, prints a summary and exits with 0 only if all passed.
 async function main() {

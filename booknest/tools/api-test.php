@@ -132,6 +132,99 @@ check('A08', 'Browse page still renders results in PHP and loads the Vue files',
     && str_contains($r['body'], 'data-filter-grid') && str_contains($r['body'], 'js/vue/boot.js') && str_contains($r['body'], 'js/vue/book-search.js'),
     preg_match_all('/<article class="card"/', $r['body']) . ' card(s) printed by PHP; boot.js and book-search.js included');
 
+// ---- 2. api/loans.php (My Loans panel) -------------------------------------------------------------
+// Returns budy's loan id for a title.
+$loanOf = fn(string $title) => (int) db_value("SELECT l.id FROM loans l JOIN books b ON b.id = l.book_id
+                                               WHERE l.user_id = 82 AND b.title = ? AND l.status <> 'returned'", [$title]);
+// Returns one loan row straight from the database.
+$loanRow = fn(int $id) => db_one('SELECT due_date, renewals, status FROM loans WHERE id = ?', [$id]);
+// Extracts the flash message text from a page, as the Base pages print it.
+$flash = function (string $html): string {
+    preg_match('/<div class="flash flash-\w+"[^>]*>.*?<p>(.*?)<\/p>/s', $html, $m);
+    return html_entity_decode(strip_tags($m[1] ?? ''), ENT_QUOTES);
+};
+$mailLog = STORAGE_PATH . '/mail.log';
+
+$r = $v->req('api/loans.php');
+check('A11', 'loans: not signed in gives 401 with a sign in link', $r['code'] === 401 && $r['isJson'] && ($r['json']['error'] ?? '') !== ''
+    && ($r['json']['signin'] ?? '') === '/booknest/sign-in.php', "HTTP {$r['code']}: \"" . ($r['json']['error'] ?? '') . '"');
+
+$r = $budy->req('api/loans.php');
+$dbOpen = (int) db_value("SELECT COUNT(*) FROM loans WHERE user_id = 82 AND status <> 'returned'");
+$dbOwed = (float) db_value('SELECT COALESCE(SUM(GREATEST(0, DATEDIFF(COALESCE(returned_date, CURDATE()), due_date)) * ' . LATE_FEE_PER_DAY . '), 0)
+                            FROM loans WHERE user_id = 82 AND fee_cleared_at IS NULL');
+$apiOwed = round(array_sum(array_column($r['json']['loans'] ?? [], 'fee')) + ($r['json']['feesFromReturns'] ?? 0), 2);
+check('A12', 'loans: member gets their open loans, fees and block reasons', $r['code'] === 200 && count($r['json']['loans'] ?? []) === $dbOpen
+    && abs($apiOwed - $dbOwed) < 0.001 && count($r['json']['blocks'] ?? []) === 3,
+    count($r['json']['loans'] ?? []) . " loans (database $dbOpen), fees S\$" . number_format($apiOwed, 2) . ' (database S$' . number_format($dbOwed, 2) . '), '
+    . count($r['json']['blocks'] ?? []) . ' block reasons');
+
+$hobbit = $loanOf('The Hobbit');
+$before = $loanRow($hobbit);
+$r = $budy->req('api/loans.php', ['action' => 'renew', 'loan_id' => (string) $hobbit]);
+$r2 = $budy->req('api/loans.php', ['action' => 'renew', 'loan_id' => (string) $hobbit, 'csrf' => str_repeat('0', 64)]);
+check('A13', 'loans: missing or wrong CSRF token gives 403, nothing changes', $r['code'] === 403 && $r2['code'] === 403
+    && str_contains($r['json']['error'] ?? '', 'session expired') && $loanRow($hobbit) == $before,
+    "no token: {$r['code']}, wrong token: {$r2['code']}, \"" . ($r['json']['error'] ?? '') . '"; loan unchanged');
+
+$r = $budy->req('api/loans.php', ['action' => 'renew', 'loan_id' => (string) $hobbit], 'PUT');
+check('A14', 'loans: PUT is refused with 405 (GET, POST allowed)', $r['code'] === 405 && preg_match('/^Allow:\s*GET, POST/mi', $r['headers']) === 1, "HTTP {$r['code']}");
+
+$token = $budy->csrf();
+$mailBefore = is_file($mailLog) ? filesize($mailLog) : 0;
+$r = $budy->req('api/loans.php', ['action' => 'renew', 'loan_id' => (string) $hobbit, 'csrf' => $token]);
+$after = $loanRow($hobbit);
+$mailNew = is_file($mailLog) ? (string) file_get_contents($mailLog, false, null, $mailBefore) : '';
+$newDue = date('Y-m-d', strtotime($before['due_date'] . ' +' . LOAN_DAYS . ' day'));
+check('A15', 'loans: renew works like process/loan.php (+14 days, emailed)', $r['code'] === 200 && $after['due_date'] === $newDue && (int) $after['renewals'] === 1
+    && ($r['json']['message'] ?? '') === 'Renewed The Hobbit. It is now due back on ' . date('l j F', strtotime($newDue)) . '. A confirmation email is on its way.'
+    && str_contains($mailNew, 'Loan renewed: The Hobbit'),
+    "due {$before['due_date']} -> {$after['due_date']}, renewals {$after['renewals']}; \"" . ($r['json']['message'] ?? '') . '"');
+
+$r = $budy->req('api/loans.php', ['action' => 'renew', 'loan_id' => (string) $hobbit, 'csrf' => $token]);
+check('A16', 'loans: second renewal refused with PHP\'s message', $r['code'] === 422 && ($r['json']['error'] ?? '') === 'Could not renew The Hobbit. It has already been renewed once, the most allowed.'
+    && $loanRow($hobbit) == $after && is_array($r['json']['loans'] ?? null), "HTTP {$r['code']}: \"" . ($r['json']['error'] ?? '') . '"; fresh list sent back');
+
+$gone = $loanOf('Gone Girl');
+$r = $budy->req('api/loans.php', ['action' => 'renew', 'loan_id' => (string) $gone, 'csrf' => $token]);
+check('A17', 'loans: overdue loan cannot be renewed', $r['code'] === 422 && str_contains($r['json']['error'] ?? '', 'It is overdue, so it cannot be renewed'),
+    "HTTP {$r['code']}: \"" . ($r['json']['error'] ?? '') . '"');
+
+$aisha = new Client('aisha');
+$aisha->login('aisha@localhost', 'Member123!');
+$at = $aisha->csrf();
+$educated = $loanOf('Educated');
+$eBefore = $loanRow($educated);
+$r = $aisha->req('api/loans.php', ['action' => 'renew', 'loan_id' => (string) $educated, 'csrf' => $at]);
+$r2 = $aisha->req('api/loans.php', ['action' => 'return', 'loan_id' => (string) $educated, 'csrf' => $at]);
+check('A18', 'loans: another member cannot renew or return your loan', $r['code'] === 422 && $r2['code'] === 422 && ($r['json']['error'] ?? '') === 'We could not find that loan.'
+    && $loanRow($educated) == $eBefore, "renew {$r['code']} \"" . ($r['json']['error'] ?? '') . "\", return {$r2['code']} \"" . ($r2['json']['error'] ?? '') . '"; loan unchanged');
+
+$r = $budy->req('api/loans.php', ['action' => 'explode', 'loan_id' => (string) $educated, 'csrf' => $token]);
+check('A19', 'loans: unknown action gives 400', $r['code'] === 400 && ($r['json']['error'] ?? '') === 'Unknown action.', "HTTP {$r['code']}: \"" . ($r['json']['error'] ?? '') . '"');
+
+$visitorToken = $v->csrf();
+$r = $v->req('api/loans.php', ['action' => 'return', 'loan_id' => (string) $educated, 'csrf' => $visitorToken]);
+check('A20', 'loans: signed out POST gives 401 even with a valid token', $r['code'] === 401 && $loanRow($educated) == $eBefore, "HTTP {$r['code']}, loan unchanged");
+
+$atomic = $loanOf('Atomic Habits');
+$r = $budy->req('api/loans.php', ['action' => 'return', 'loan_id' => (string) $atomic, 'csrf' => $token]);
+$sixReason = array_filter($r['json']['blocks'] ?? [], fn($b) => str_contains($b, 'books on loan'));
+check('A21', 'loans: return works, list and block reasons are updated', $r['code'] === 200 && ($r['json']['message'] ?? '') === 'Returned Atomic Habits. Thank you for bringing it back on time.'
+    && count($r['json']['loans'] ?? []) === $dbOpen - 1 && !$sixReason && $loanRow($atomic)['status'] === 'returned',
+    '"' . ($r['json']['message'] ?? '') . '"; ' . count($r['json']['loans'] ?? []) . ' loans left; "6 books" reason gone: ' . ($sixReason ? 'no' : 'yes'));
+
+// The same action through the Base form must give the same words (here: returning Educated on time).
+$budy->req('process/loan.php', ['action' => 'return', 'loan_id' => (string) $educated, 'csrf' => $token]);
+$baseMsg = $flash($budy->req('account.php')['body']);
+check('A22', 'loans: API message matches the Base flash message', $baseMsg === 'Returned Educated. Thank you for bringing it back on time.'
+    && str_replace('Atomic Habits', 'Educated', $r['json']['message'] ?? '') === $baseMsg, "Base: \"$baseMsg\"");
+
+$r = $budy->req('account.php');
+check('A23', 'My Account still lists loans in PHP and loads the Vue panel', $r['code'] === 200 && preg_match_all('/<li class="loan-item/', $r['body']) >= 4
+    && str_contains($r['body'], 'name="action" value="renew"') && str_contains($r['body'], 'js/vue/loans-panel.js'),
+    preg_match_all('/<li class="loan-item/', $r['body']) . ' loan rows with Base forms; loans-panel.js included');
+
 // ---- Summary --------------------------------------------------------------------------------------
 $passed = count(array_filter($results, fn($x) => $x[2]));
 echo str_repeat('-', 100) . "\n$passed of " . count($results) . " api checks passed.\n";
