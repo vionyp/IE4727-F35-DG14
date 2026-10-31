@@ -16,3 +16,24 @@
 @media (prefers-reduced-motion: reduce) {
   .card-grid.is-loading { transition: none; }
 }
+
+/* 2. My Loans panel on My Account (loans-panel.js) ------------------------------------------ */
+.vl { display: grid; gap: var(--s3); }
+.vl-summary { display: flex; flex-wrap: wrap; gap: var(--s2); list-style: none; margin: 0; padding: 0; }
+.vl-summary li { padding: .35rem .8rem; border: 1px solid var(--border-strong); border-radius: 999px; background: rgba(255, 255, 255, .04); color: var(--muted); font-size: var(--step--1); }
+.vl-summary strong { color: var(--text); font-variant-numeric: tabular-nums; }
+.vl-summary li.is-alert { border-color: rgba(229, 97, 90, .5); }
+.vl-summary li.is-alert strong { color: #F08A84; }
+.vl-summary li.is-soon { border-color: rgba(var(--glow-amber), .45); }
+.vl-summary li.is-soon strong { color: var(--accent); }
+.vl-message:focus { outline: 2px solid var(--focus); outline-offset: 2px; }
+.notice-ok { border-color: rgba(var(--glow-teal), .5); background: rgba(var(--glow-teal), .08); }
+.loan-item[aria-busy="true"] { opacity: .6; }
+
+/* <transition-group name="loan">: a returned book fades and slides out, the rest close the gap. */
+.loan-leave-active { transition: opacity .35s var(--ease), transform .35s var(--ease); }
+.loan-leave-to { opacity: 0; transform: translateX(2rem); }
+.loan-move { transition: transform .35s var(--ease); }
+@media (prefers-reduced-motion: reduce) {
+  .loan-leave-active, .loan-move { transition: none; }
+}
