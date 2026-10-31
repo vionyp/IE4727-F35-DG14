@@ -1,0 +1,275 @@
+// Modern Enhancement: browser tests for the Vue screens, run in headless Microsoft Edge.
+//   node tools/vue-browser-test.mjs            (all groups)
+//   node tools/vue-browser-test.mjs search     (one group: search, loans or rooms)
+// Needs Node 22+ (built-in fetch and WebSocket), Edge, Apache and MySQL with the seed data.
+// It drives the real pages through the Chrome DevTools Protocol: types with real key events,
+// counts requests to api/, blocks the Vue file or an endpoint to test the fallbacks, turns
+// JavaScript off, and fails any test that logs a console error. No packages to install.
+// The loan tests renew and return books: re-import the seed afterwards for a clean demo.
+import { spawn } from 'node:child_process';
+import { mkdtempSync, rmSync, existsSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+const SITE = 'http://localhost/booknest/';
+const PORT = 9341;
+const EDGE = ['C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', 'C:/Program Files/Microsoft/Edge/Application/msedge.exe'].find(existsSync);
+const only = process.argv[2] || '';
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const results = [];
+
+// Records and prints one result.
+function check(id, name, pass, actual) {
+  results.push([id, name, !!pass, actual]);
+  console.log(`${id.padEnd(5)} ${pass ? 'PASS' : 'FAIL'} ${name.slice(0, 60).padEnd(60)} ${String(actual).slice(0, 130)}`);
+}
+
+// One browser tab in its own cookie jar (a fresh browser context), driven over CDP.
+class Tab {
+  static async open(browserWs) {
+    const ctx = await browserWs.send('Target.createBrowserContext', { disposeOnDetach: true });
+    const { targetId } = await browserWs.send('Target.createTarget', { url: 'about:blank', browserContextId: ctx.browserContextId });
+    const tab = new Tab(await Cdp.connect(`ws://127.0.0.1:${PORT}/devtools/page/${targetId}`));
+    await tab.cdp.send('Runtime.enable');
+    await tab.cdp.send('Page.enable');
+    await tab.cdp.send('Network.enable');
+    await tab.cdp.send('Log.enable');
+    return tab;
+  }
+  constructor(cdp) {
+    this.cdp = cdp;
+    this.errors = [];
+    this.requests = [];
+    cdp.on('Runtime.exceptionThrown', (p) => this.errors.push(p.exceptionDetails.exception?.description || p.exceptionDetails.text));
+    cdp.on('Runtime.consoleAPICalled', (p) => { if (p.type === 'error') this.errors.push(p.args.map((a) => a.value ?? a.description).join(' ')); });
+    cdp.on('Log.entryAdded', (p) => {
+      // A request we blocked on purpose is expected to fail; anything else is a real error.
+      if (p.entry.level === 'error' && !/ERR_BLOCKED_BY_CLIENT/.test(p.entry.text)) this.errors.push(p.entry.text + ' ' + (p.entry.url || ''));
+    });
+    cdp.on('Network.requestWillBeSent', (p) => this.requests.push({ url: p.request.url, method: p.request.method, at: Date.now() }));
+  }
+  // Opens a page; options: js (default true), block (URL patterns that fail to load).
+  async go(path, { js = true, block = [] } = {}) {
+    await this.cdp.send('Network.setBlockedURLs', { urls: block });
+    await this.cdp.send('Emulation.setScriptExecutionDisabled', { value: !js });
+    await this.cdp.send('Page.navigate', { url: SITE + path });
+    await this.waitFor('document.readyState === "complete"', 15000, !js);
+    await sleep(300);
+  }
+  // Evaluates an expression in the page and returns its value.
+  async eval(expression) {
+    const r = await this.cdp.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
+    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);
+    return r.result.value;
+  }
+  // Waits until an expression is truthy (polling), or gives up after the timeout.
+  async waitFor(expression, timeout = 5000, quiet = false) {
+    const end = Date.now() + timeout;
+    while (Date.now() < end) {
+      try { if (await this.eval(expression)) return true; } catch (e) { if (!quiet) { /* page still loading */ } }
+      await sleep(80);
+    }
+    return false;
+  }
+  // Reads the page HTML through the DOM domain (works with JavaScript turned off).
+  async html() {
+    const doc = await this.cdp.send('DOM.getDocument', { depth: -1 });
+    return (await this.cdp.send('DOM.getOuterHTML', { nodeId: doc.root.nodeId })).outerHTML;
+  }
+  // Focuses an element and types text with real key events, one character every delay ms.
+  async type(selector, text, delay = 60) {
+    await this.eval(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); el.focus(); el.select && el.select(); })()`);
+    for (const ch of text) {
+      await this.cdp.send('Input.insertText', { text: ch });
+      await sleep(delay);
+    }
+  }
+  // Presses one key (Enter, Escape, Tab...).
+  async key(key) {
+    const codes = { Enter: 13, Escape: 27, Tab: 9, Backspace: 8 };
+    for (const type of ['keyDown', 'keyUp']) {
+      await this.cdp.send('Input.dispatchKeyEvent', { type, key, code: key, windowsVirtualKeyCode: codes[key] || 0, text: key === 'Enter' ? '\r' : undefined });
+    }
+  }
+  // Clicks the centre of the first element matching the selector, with a real mouse event.
+  async click(selector) {
+    const box = await this.eval(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null;
+      el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    if (!box) throw new Error('Nothing to click: ' + selector);
+    for (const type of ['mousePressed', 'mouseReleased']) {
+      await this.cdp.send('Input.dispatchMouseEvent', { type, x: box.x, y: box.y, button: 'left', clickCount: 1 });
+    }
+  }
+  // Signs in through the real sign in form.
+  async login(email, password) {
+    await this.go('sign-in.php');
+    await this.eval(`(() => { document.getElementById('li-email').value = ${JSON.stringify(email)};
+      document.getElementById('li-password').value = ${JSON.stringify(password)}; document.getElementById('login').submit(); })()`);
+    await sleep(1500);
+    return this.waitFor('!!document.querySelector(".account-link") && !location.pathname.endsWith("sign-in.php")', 8000);
+  }
+  // Counts the requests made to an api/ path since a given time.
+  apiCalls(path, since = 0) {
+    return this.requests.filter((r) => r.url.includes('/api/' + path) && r.at >= since);
+  }
+  // Saves a screenshot when the SHOTS environment variable names a folder (for checking the layout by eye).
+  async shot(name, width = 1280) {
+    if (!process.env.SHOTS) return;
+    await this.cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: width < 600 });
+    await sleep(300);
+    const img = await this.cdp.send('Page.captureScreenshot', { format: 'png' });
+    writeFileSync(join(process.env.SHOTS, name + '.png'), Buffer.from(img.data, 'base64'));
+    await this.cdp.send('Emulation.clearDeviceMetricsOverride');
+  }
+  async close() { this.cdp.close(); }
+}
+
+// A minimal Chrome DevTools Protocol client over the built-in WebSocket.
+class Cdp {
+  static async connect(url) {
+    const ws = new WebSocket(url);
+    await new Promise((resolve, reject) => { ws.addEventListener('open', resolve); ws.addEventListener('error', reject); });
+    return new Cdp(ws);
+  }
+  constructor(ws) {
+    this.ws = ws; this.id = 0; this.waiting = new Map(); this.handlers = {};
+    ws.addEventListener('message', (m) => {
+      const d = JSON.parse(m.data);
+      if (d.id && this.waiting.has(d.id)) {
+        const { resolve, reject } = this.waiting.get(d.id);
+        this.waiting.delete(d.id);
+        d.error ? reject(new Error(d.error.message)) : resolve(d.result);
+      } else if (d.method && this.handlers[d.method]) {
+        this.handlers[d.method].forEach((h) => h(d.params));
+      }
+    });
+  }
+  send(method, params = {}) {
+    return new Promise((resolve, reject) => {
+      const id = ++this.id;
+      this.waiting.set(id, { resolve, reject });
+      this.ws.send(JSON.stringify({ id, method, params }));
+    });
+  }
+  on(method, fn) { (this.handlers[method] ||= []).push(fn); }
+  close() { this.ws.close(); }
+}
+
+// ---- 1. Live search on Browse ------------------------------------------------------------------------
+async function searchTests(browser) {
+  const t = await Tab.open(browser);
+  await t.go('catalogue.php');
+  const mounted = await t.waitFor('!!document.querySelector(".vs .card")', 8000);
+  const state = await t.eval(`({ cards: document.querySelectorAll('.vs .card').length,
+    baseHidden: document.querySelector('[data-filter-grid]').hidden && document.querySelector('.toolbar').hidden,
+    vue: window.Vue && Vue.version, count: document.querySelector('.vs-count').textContent })`);
+  await t.shot('search-desktop');
+  await t.shot('search-phone', 390);
+  check('B01', 'Search: Vue mounts and replaces the Base grid', mounted && state.cards === 42 && state.baseHidden,
+    `Vue ${state.vue}, ${state.cards} cards, Base grid hidden: ${state.baseHidden}, "${state.count}"`);
+
+  let since = Date.now();
+  await t.type('#vs-q', 'hob', 60);
+  await sleep(150);
+  const during = t.apiCalls('books.php', since).length;
+  await t.waitFor('document.querySelectorAll(".vs .card").length === 1', 3000);
+  const after = t.apiCalls('books.php', since).length;
+  const titles = await t.eval('[...document.querySelectorAll(".vs .card-title")].map(x => x.textContent)');
+  check('B02', 'Search: 300 ms debounce, one request for "hob"', during === 0 && after === 1 && titles[0] === 'The Hobbit',
+    `requests while typing: ${during}, after the pause: ${after}; result: ${titles.join(', ')}`);
+
+  const url = await t.eval('location.search');
+  const h1 = await t.eval('document.querySelector(".page-head h1").textContent');
+  check('B03', 'Search: address and heading follow the search', url === '?q=hob' && h1 === 'Results for "hob"', `address "${url}", heading "${h1}"`);
+
+  await t.eval(`(() => { const i = document.getElementById('vs-q'); i.select(); })()`);
+  await t.key('Backspace');
+  await t.waitFor('document.querySelectorAll(".vs .card").length === 42', 3000);
+  since = Date.now();
+  await t.click('.vs .chips button:nth-child(2)');
+  await sleep(400);
+  const cat = await t.eval(`({ chip: document.querySelector('.vs .chips .is-active').textContent, cards: document.querySelectorAll('.vs .card').length })`);
+  const catCount = await (await fetch(SITE + 'api/books.php')).json().then((d) => d.books.filter((b) => b.categoryName === cat.chip).length);
+  check('B04', 'Search: category filter is computed, no new request', cat.cards === catCount && cat.cards < 42 && t.apiCalls('books.php', since).length === 0,
+    `"${cat.chip}": ${cat.cards} cards (expected ${catCount}), requests: ${t.apiCalls('books.php', since).length}`);
+
+  await t.click('.vs .chips button:nth-child(1)');
+  await t.click('.vs-avail input');
+  await sleep(300);
+  const avail = await t.eval(`[...document.querySelectorAll('.vs .card .card-avail')].map(x => x.textContent)`);
+  check('B05', 'Search: "On the shelf now only" keeps only available books', avail.length > 0 && avail.length < 42 && avail.every((x) => x === 'Available to borrow'),
+    `${avail.length} cards, all "Available to borrow": ${avail.every((x) => x === 'Available to borrow')}`);
+  await t.click('.vs-avail input');
+
+  await t.type('#vs-q', 'zzqx', 30);
+  await t.waitFor('!!document.querySelector(".vs .empty-state")', 3000);
+  const empty = await t.eval(`({ text: document.querySelector('.vs .empty-state h2')?.textContent, count: document.querySelector('.vs-count').textContent })`);
+  await t.click('.vs .empty-state button');
+  const cleared = await t.waitFor('document.querySelectorAll(".vs .card").length === 42 && document.getElementById("vs-q").value === ""', 3000);
+  check('B06', 'Search: empty state, then "Clear" brings every book back', empty.text === 'Nothing matches' && cleared, `"${empty.text}", "${empty.count}", cleared: ${cleared}`);
+
+  since = Date.now();
+  await t.type('#vs-q', 'dune', 0);
+  await t.key('Enter');
+  await sleep(120);
+  const enterCalls = t.apiCalls('books.php', since).length;
+  await t.waitFor('document.querySelectorAll(".vs .card").length === 1', 3000);
+  check('B07', 'Search: Enter searches at once without waiting', enterCalls >= 1, `${enterCalls} request(s) within 120 ms of Enter`);
+  check('B08', 'Search: no console errors', t.errors.length === 0, t.errors.length ? t.errors.join(' | ') : 'none');
+  await t.close();
+
+  const off = await Tab.open(browser);
+  await off.go('catalogue.php?q=hobbit', { js: false });
+  const html = await off.html();
+  check('B09', 'Search: JavaScript off, the PHP search still works', /<article class="card"/.test(html) && html.includes('The Hobbit') && !html.includes('class="vs"'),
+    `${(html.match(/<article class="card"/g) || []).length} PHP card(s), Vue markup: ${html.includes('class="vs"')}`);
+  await off.close();
+
+  const noVue = await Tab.open(browser);
+  await noVue.go('catalogue.php', { block: ['*vue.global.prod.js*'] });
+  await sleep(800);
+  const nv = await noVue.eval(`({ vs: !!document.querySelector('.vs'), grid: !document.querySelector('[data-filter-grid]').hidden,
+    cards: document.querySelectorAll('[data-filter-grid] .card').length, refine: !document.querySelector('[data-refine]').hidden })`);
+  check('B10', 'Search: Vue blocked, the Base page stays (refine box works)', !nv.vs && nv.grid && nv.cards === 42 && nv.refine,
+    `Vue app: ${nv.vs}, Base grid shown: ${nv.grid} (${nv.cards} cards), refine box shown: ${nv.refine}`);
+  await noVue.close();
+
+  const noApi = await Tab.open(browser);
+  await noApi.go('catalogue.php', { block: ['*api/books.php*'] });
+  await sleep(1200);
+  const na = await noApi.eval(`({ vs: !!document.querySelector('.vs'), grid: !document.querySelector('[data-filter-grid]').hidden })`);
+  check('B11', 'Search: api/ unreachable, Vue steps back and the Base page stays', !na.vs && na.grid, `Vue app: ${na.vs}, Base grid shown: ${na.grid}`);
+  await noApi.close();
+}
+
+const groups = { search: searchTests };
+
+// Starts Edge, runs the chosen groups, prints a summary and exits with 0 only if all passed.
+async function main() {
+  if (!EDGE) { console.log('Microsoft Edge not found; browser tests not run.'); process.exit(2); }
+  const profile = mkdtempSync(join(tmpdir(), 'bn-vue-'));
+  const edge = spawn(EDGE, ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, '--no-first-run',
+    '--no-default-browser-check', '--window-size=1280,900', 'about:blank']);
+  let version;
+  for (let i = 0; i < 60 && !version; i++) {
+    try { version = await (await fetch(`http://127.0.0.1:${PORT}/json/version`)).json(); } catch { await sleep(250); }
+  }
+  const browser = await Cdp.connect(version.webSocketDebuggerUrl);
+  console.log(`BookNest Vue browser tests, ${new Date().toISOString()}, ${version.Browser}\n${'-'.repeat(100)}`);
+  try {
+    for (const [name, run] of Object.entries(groups)) {
+      if (!only || only === name) await run(browser);
+    }
+  } catch (e) {
+    check('ERR', 'Test run stopped', false, e.message);
+  }
+  browser.close();
+  edge.kill();
+  await sleep(500);
+  try { rmSync(profile, { recursive: true, force: true }); } catch { /* Edge may still hold a file */ }
+  const passed = results.filter((r) => r[2]).length;
+  console.log(`${'-'.repeat(100)}\n${passed} of ${results.length} browser checks passed.`);
+  process.exit(passed === results.length ? 0 : 1);
+}
+
+main();

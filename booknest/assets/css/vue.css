@@ -1,0 +1,18 @@
+/* Modern Enhancement styles, loaded by assets/js/vue/boot.js only when Vue runs.
+   Reuses the Base design tokens (base.css) and components (cards, chips, pills, slots). */
+
+/* 1. Live search on Browse (book-search.js) ----------------------------------------------- */
+.vs { display: grid; gap: var(--s4); margin-top: var(--s4); }
+.vs-controls { display: flex; flex-wrap: wrap; gap: var(--s4); align-items: end; }
+.vs-query { flex: 1 1 320px; max-width: 520px; }
+.vs-sort { flex: 0 1 220px; }
+.vs-avail { align-self: center; min-height: 44px; align-items: center; }
+.vs-avail input { margin-top: 0; }
+.vs-count { margin: 0; }
+.vs .chips { margin: 0; }
+.vs .chip { font: inherit; cursor: pointer; }
+.card-grid.is-loading { opacity: .55; transition: opacity var(--fast) var(--ease); }
+
+@media (prefers-reduced-motion: reduce) {
+  .card-grid.is-loading { transition: none; }
+}
