@@ -1,0 +1,54 @@
+/* Modern Enhancement: live search suggestions under the header search box (assets/js/live-search.js).
+   Uses the design tokens from base.css and the availability pills from pages.css. */
+.suggest {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 60;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+}
+.suggest-list { list-style: none; margin: 0; padding: var(--s1, .25rem) 0; max-height: min(70vh, 34rem); overflow-y: auto; }
+.suggest-item a {
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  grid-template-areas: "cover text" "cover avail";
+  gap: .1rem var(--s3);
+  align-items: center;
+  padding: .5rem var(--s4);
+  color: var(--text);
+  text-decoration: none;
+}
+.suggest-item img { grid-area: cover; width: 32px; height: 48px; object-fit: cover; border-radius: 3px; background: var(--elevated); }
+.suggest-text { grid-area: text; min-width: 0; }
+.suggest-title { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.suggest-author { display: block; color: var(--muted); font-size: var(--step--1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.suggest-item .avail { grid-area: avail; justify-self: start; font-size: .72rem; padding: .05rem .5rem; }
+.suggest-item mark { background: none; color: var(--gold); }
+.suggest-item.is-active a, .suggest-item a:hover { background: var(--elevated); }
+.suggest-item.is-active a { box-shadow: inset 3px 0 0 var(--accent); }
+.suggest-foot {
+  display: block;
+  padding: .6rem var(--s4);
+  border-top: 1px solid var(--border);
+  color: var(--accent);
+  font-size: var(--step--1);
+  font-weight: 650;
+  text-decoration: none;
+}
+.suggest-foot:hover, .suggest-foot:focus-visible { background: var(--elevated); }
+.suggest-empty { margin: 0; padding: .75rem var(--s4); color: var(--muted); font-size: var(--step--1); }
+
+@media (min-width: 900px) {
+  .suggest-item a { grid-template-columns: 32px 1fr auto; grid-template-areas: "cover text avail"; }
+  .suggest-item .avail { justify-self: end; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .suggest { animation: suggest-in var(--fast) var(--ease); }
+  @keyframes suggest-in { from { opacity: 0; transform: translateY(-4px); } }
+}
+@media print { .suggest { display: none; } }
