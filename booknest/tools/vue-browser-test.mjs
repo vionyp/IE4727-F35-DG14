@@ -279,6 +279,7 @@ async function loansTests(browser) {
   const signedIn = await t.login('budy@gmail.com', 'budy123!');
   await t.go('account.php');
   const mounted = await t.waitFor('!!document.querySelector(".vl .loan-item")', 8000);
+  await t.eval(`document.getElementById('loans').scrollIntoView({ behavior: 'instant' })`);
   await t.shot('loans-desktop');
   await t.shot('loans-phone', 390);
   let s = await t.eval(totals);
@@ -366,7 +367,108 @@ async function loansTests(browser) {
   await noVue.close();
 }
 
-const groups = { search: searchTests, loans: loansTests };
+// ---- 3. Study room slot grid ----------------------------------------------------------------------
+const quota = `(document.querySelector('.vr-quota')?.textContent || '').replace(/\\s+/g, ' ').trim()`;
+
+async function roomsTests(browser) {
+  const v = await Tab.open(browser);
+  await v.go('rooms.php');
+  const mounted = await v.waitFor('document.querySelectorAll(".vr-grid li").length === 22', 8000);
+  const vs = await v.eval(`({ cells: document.querySelectorAll('.vr-grid li').length, baseHidden: document.getElementById('timetable').hidden
+    && document.querySelector('.availability-wrap').hidden, quota: ${quota}, title: document.getElementById('vr-title').textContent })`);
+  await v.eval(`document.querySelector('.vr').scrollIntoView({ behavior: 'instant' })`);
+  await v.shot('rooms-desktop');
+  await v.shot('rooms-phone', 390);
+  check('D01', 'Rooms: grid mounts in place of the arc timetable', mounted && vs.cells === 22 && vs.baseHidden && vs.quota.startsWith('Viewing is open to everyone'),
+    `${vs.cells} cells, Base timetable hidden: ${vs.baseHidden}, "${vs.title}", "${vs.quota.slice(0, 40)}..."`);
+  await v.clickEl(`document.querySelector('.vr-grid a.slot-free')`);
+  await v.waitFor('location.search.includes("start=")', 5000);
+  const vurl = await v.eval('location.pathname + location.search');
+  check('D02', 'Rooms: visitor clicking a free cell follows the Base link', /rooms\.php\?date=.*&room=\d+&start=\d\d%3A\d\d/.test(vurl), vurl);
+  check('D03', 'Rooms: no JavaScript errors (visitor)', v.errors.length === 0, v.errors.join(' | ') || 'none');
+  await v.close();
+
+  const t = await Tab.open(browser);
+  await t.login('aisha@localhost', 'Member123!');
+  await t.go('rooms.php');
+  await t.waitFor('document.querySelectorAll(".vr-grid li").length === 22', 8000);
+  // Pick a day (not today) where aisha has nothing booked, asking the same api the grid uses.
+  const day = await t.eval(`(async () => { for (const opt of [...document.querySelectorAll('#vr-date option')].slice(1)) {
+      const r = await fetch('/booknest/api/rooms.php?date=' + opt.value, { credentials: 'same-origin' }).then(x => x.json());
+      if (r.minutesUsed === 0) return opt.value; } return ''; })()`);
+  // Changing a v-model select: set the value and fire 'change', exactly what a person's choice does.
+  const choose = (id, value) => t.eval(`(() => { const s = document.getElementById(${JSON.stringify(id)}); s.value = ${JSON.stringify(String(value))};
+    s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  let since = Date.now();
+  await choose('vr-date', day);
+  await t.waitFor(`document.getElementById('vr-date').value === ${JSON.stringify(day)} && !document.querySelector('.vr-grid.is-loading')`, 5000);
+  await sleep(300);
+  const dateCalls = t.apiCalls('rooms.php', since).map((r) => new URL(r.url).searchParams.get('date'));
+  since = Date.now();
+  await choose('vr-room', 12);
+  await t.waitFor(`document.getElementById('vr-title').textContent.startsWith('Timetable: A12')`, 5000);
+  await sleep(300);
+  const roomCalls = t.apiCalls('rooms.php', since).map((r) => new URL(r.url).searchParams.get('room'));
+  check('D04', 'Rooms: watch refetches once when the date or room changes', dateCalls.length === 1 && dateCalls[0] === day && roomCalls.length === 1 && roomCalls[0] === '12',
+    `date change -> ${dateCalls.length} request (date=${dateCalls[0]}), room change -> ${roomCalls.length} request (room=${roomCalls[0]})`);
+
+  const q0 = await t.eval(quota);
+  await t.clickEl(`document.querySelectorAll('.vr-grid a.slot-free')[2]`);
+  await sleep(400);
+  const picked = await t.eval(`({ quota: ${quota}, chosen: document.querySelector('.vr-grid .is-selected')?.textContent.trim(),
+    current: document.querySelector('.vr-grid .is-selected')?.getAttribute('aria-current'),
+    form: [document.getElementById('bk-room').value, document.getElementById('bk-date').value, document.getElementById('bk-start').value, document.getElementById('bk-duration').value],
+    summary: document.querySelector('[data-booking-summary]').textContent, focus: document.activeElement.id })`);
+  check('D05', 'Rooms: <slot-cell> emits pick; the Base form is filled', picked.chosen?.endsWith('Chosen') && picked.current === 'true' && picked.form[0] === '12'
+    && picked.form[1] === day && /^\d\d:\d\d$/.test(picked.form[2]) && picked.summary.includes('A12') && picked.focus === 'bk-duration',
+    `cell "${picked.chosen}", form = room ${picked.form[0]}, ${picked.form[1]}, ${picked.form[2]}, ${picked.form[3]} min; rooms.js summary: "${picked.summary.slice(0, 50)}..."`);
+  await choose('vr-duration', 30);
+  await sleep(200);
+  const q30 = await t.eval(`({ quota: ${quota}, form: document.getElementById('bk-duration').value })`);
+  check('D06', 'Rooms: computed minutes left follow the choice and duration', q0.startsWith('60 of 60 minutes left') && picked.quota.includes('leaves 0 minutes')
+    && q30.quota.includes('leaves 30 minutes') && q30.form === '30', `before: "${q0.slice(0, 30)}" | 60 min: "...${picked.quota.slice(-26)}" | 30 min: "...${q30.quota.slice(-27)}", form duration ${q30.form}`);
+  await choose('vr-duration', 60);
+
+  await t.clickEl(`document.querySelector('#booking button[type="submit"]')`);
+  await t.waitFor(`!!document.querySelector('.flash')`, 8000);
+  const booked = await t.eval(`document.querySelector('.flash p')?.textContent || ''`);
+  await t.waitFor('document.querySelectorAll(".vr-grid li").length === 22', 8000);
+  const afterBook = await t.eval(`({ yours: document.querySelectorAll('.vr-grid .slot-yours').length, quota: ${quota}, room: document.getElementById('vr-room').value, date: document.getElementById('vr-date').value })`);
+  check('D07', 'Rooms: booking through the Base form, grid then shows Yours', booked.startsWith('Booked. A12') && afterBook.yours === 2 && afterBook.quota.startsWith('0 of 60 minutes'),
+    `"${booked.slice(0, 50)}..." | grid: ${afterBook.yours} Yours cells, "${afterBook.quota.slice(0, 30)}"`);
+
+  await t.clickEl(`[...document.querySelectorAll('.vr-grid a.slot-free')].slice(-3)[0]`);
+  await sleep(300);
+  const over = await t.eval(`({ quota: ${quota}, over: document.querySelector('.vr-quota').classList.contains('is-over') })`);
+  await t.eval(`document.getElementById('booking').submit()`);   // skips the browser checks on purpose, like a tampered request
+  await t.waitFor(`(document.querySelector('.flash p')?.textContent || '').includes('daily limit')`, 8000);
+  const refused = await t.eval(`document.querySelector('.flash p')?.textContent || ''`);
+  check('D08', 'Rooms: grid warns over the cap; the server still refuses', over.over && over.quota.includes('would be refused') && refused.includes('The daily limit is 60 minutes'),
+    `grid: "...${over.quota.slice(-70)}" | server: "${refused}"`);
+  check('D09', 'Rooms: no JavaScript errors (member)', t.errors.length === 0, t.errors.join(' | ') || 'none');
+  await t.close();
+
+  const off = await Tab.open(browser);
+  await off.go('rooms.php', { js: false });
+  const html = await off.html();
+  check('D10', 'Rooms: JavaScript off, the PHP timetable is shown', !html.includes('class="vr"') && html.includes('data-availability') && (html.match(/class="slot slot-free"/g) || []).length > 0,
+    `${(html.match(/<a class="slot slot-free"/g) || []).length} free links in the PHP table, no Vue markup`);
+  await off.close();
+
+  const noVue = await Tab.open(browser);
+  await noVue.login('aisha@localhost', 'Member123!');
+  await noVue.go('rooms.php', { block: ['*vue.global.prod.js*'] });
+  await sleep(600);
+  await noVue.clickEl(`document.querySelector('[data-availability] a.slot-free')`);
+  await sleep(300);
+  const nv = await noVue.eval(`({ vr: !!document.querySelector('.vr'), table: !document.querySelector('.availability-wrap').hidden,
+    start: document.getElementById('bk-start').value, room: document.getElementById('bk-room').value })`);
+  check('D11', 'Rooms: Vue blocked, the Base table and rooms.js still work', !nv.vr && nv.table && nv.start !== '' && nv.room !== '',
+    `Vue app: ${nv.vr}, PHP table shown: ${nv.table}; Base click filled room ${nv.room} at ${nv.start}`);
+  await noVue.close();
+}
+
+const groups = { search: searchTests, loans: loansTests, rooms: roomsTests };
 
 // Starts Edge, runs the chosen groups, prints a summary and exits with 0 only if all passed.
 async function main() {

@@ -37,3 +37,16 @@
 @media (prefers-reduced-motion: reduce) {
   .loan-leave-active, .loan-move { transition: none; }
 }
+
+/* 3. Study room slot grid (room-slots.js, slot-cell.js) -------------------------------------- */
+.vr { display: grid; gap: var(--s3); margin-top: var(--s6); }
+.vr .section-head { margin: 0; }
+.vr-controls { display: flex; flex-wrap: wrap; gap: var(--s4); align-items: end; }
+.vr-controls .field { flex: 1 1 180px; max-width: 280px; }
+.vr-quota { margin: 0; padding: var(--s3) var(--s4); border: 1px solid var(--border); border-radius: var(--radius); background: rgba(23, 27, 34, .6); }
+.vr-quota.is-over { border-color: rgba(229, 97, 90, .55); background: rgba(229, 97, 90, .08); }
+.vr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(5.2rem, 1fr)); gap: var(--s2); list-style: none; margin: 0; padding: 0; }
+.vr-grid li { display: grid; gap: .25rem; }
+.vr-time { font-size: .72rem; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+.vr-grid.is-loading { opacity: .55; }
+.vr-note { margin: 0; }

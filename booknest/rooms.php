@@ -82,7 +82,7 @@ $link = fn(array $change = [], string $hash = '') => url('rooms.php?'
 $page_title = 'Study Rooms';
 $page_desc = 'See which study rooms are free and book one for up to an hour a day.';
 $body_class = 'page-rooms';
-$scripts = ['forms.js', 'rooms.js'];
+$scripts = ['forms.js', 'rooms.js', 'vue/boot.js', 'vue/slot-cell.js', 'vue/room-slots.js'];
 require __DIR__ . '/includes/header.php';
 ?>
 
