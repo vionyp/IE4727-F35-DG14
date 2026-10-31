@@ -56,7 +56,7 @@ $heading = $q !== '' ? 'Results for "' . $q . '"' : ($category ? $category['name
 $page_title = $q !== '' ? 'Search: ' . $q : ($category ? $category['name'] : 'Browse');
 $page_desc = 'Browse and search the BookNest collection by title, author, category, ISBN or serial number.';
 $body_class = 'page-catalogue';
-$scripts = ['search-filter.js'];
+$scripts = ['search-filter.js', 'vue/boot.js', 'vue/book-search.js'];
 $crumbs = [['Home', url()], ['Browse', $category || $q !== '' ? url('catalogue.php') : null]];
 if ($category) {
     $crumbs[] = [$category['name'], null];
