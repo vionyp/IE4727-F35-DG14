@@ -11,6 +11,7 @@
 // - <transition-group>: when a book is returned its row fades out ('loan-leave-*' classes in vue.css)
 //   instead of vanishing; v-for :key="l.id" lets Vue keep each row and animate only the one leaving.
 // - nextTick(): waits for Vue to update the page before moving keyboard focus.
+// - Composable: useFetch() (use-fetch.js) gives each request its own loading/error state.
 // Server rules: Renew and Return POST to api/loans.php with the page's CSRF token. That endpoint calls
 // the same renew_loan()/return_loan() as process/loan.php, so PHP still decides everything. When PHP
 // says no (already renewed, overdue, expired session, signed out) its message is shown as it was sent.
@@ -63,9 +64,15 @@
         Vue.nextTick(function () { if (messageEl.value) { messageEl.value.focus(); } });
       }
 
+      // Two independent request slots from the useFetch() composable (use-fetch.js): one for the list,
+      // one for actions, so a renew never cancels the first load. action.loading disables the buttons.
+      var list = api.useFetch();
+      var action = api.useFetch();
+
       // Loads the loans the first time.
       function load() {
-        api.requestJson('api/loans.php').then(function (res) {
+        list.run('api/loans.php').then(function (res) {
+          if (!res) { return; }
           if (!res.ok) { throw new Error(res.data.error || 'Could not load loans.'); }
           apply(res.data);
           started = true;
@@ -74,13 +81,14 @@
       }
 
       // Sends renew or return for one loan and shows PHP's answer, whatever it is.
-      function send(action, loan) {
+      function send(kind, loan) {
         busyId.value = loan.id;
-        api.requestJson('api/loans.php', { method: 'POST', form: { action: action, loan_id: loan.id } })
+        action.run('api/loans.php', { method: 'POST', form: { action: kind, loan_id: loan.id } })
           .then(function (res) {
+            if (!res) { return; }
             apply(res.data);
             if (res.ok) {
-              highlight.value = action === 'renew' ? loan.id : 0;
+              highlight.value = kind === 'renew' ? loan.id : 0;
               say('success', res.data.message);
             } else {
               say('error', res.data.error || 'That did not work. Please reload the page.', res.status === 401 ? res.data.signin : '');
@@ -142,7 +150,7 @@
       Vue.onMounted(load);
 
       return {
-        loans: loans, blocks: blocks, rules: rules, message: message, busyId: busyId, confirmId: confirmId,
+        loans: loans, blocks: blocks, acting: action.loading, rules: rules, message: message, busyId: busyId, confirmId: confirmId,
         highlight: highlight, messageEl: messageEl, openCount: openCount, totalFee: totalFee, dueSoon: dueSoon,
         reminder: reminder, renew: renew, askReturn: askReturn, giveBack: giveBack, money: money, daysText: daysText,
         findUrl: api.url('catalogue.php?sort=available')
@@ -177,13 +185,13 @@
       '        </template>' +
       '      </div>' +
       '      <div class="loan-action cluster">' +
-      '        <button v-if="l.canRenew" type="button" class="btn btn-secondary btn-sm" :disabled="busyId !== 0" @click="renew(l)"' +
+      '        <button v-if="l.canRenew" type="button" class="btn btn-secondary btn-sm" :disabled="acting" @click="renew(l)"' +
       '                :aria-label="\'Renew \' + l.title + \' until \' + l.renewToLong">Renew to {{ l.renewToShort }}</button>' +
-      '        <button v-if="confirmId !== l.id" type="button" class="btn btn-ghost btn-sm" :disabled="busyId !== 0" @click="askReturn(l)">' +
+      '        <button v-if="confirmId !== l.id" type="button" class="btn btn-ghost btn-sm" :disabled="acting" @click="askReturn(l)">' +
       '          {{ l.state === \'reserved\' ? \'Cancel reservation\' : \'Return\' }}</button>' +
       '        <div v-else class="confirm-panel" role="group" :aria-label="\'Confirm return of \' + l.title">' +
       '          <span class="small">{{ l.state === \'reserved\' ? \'Cancel this reservation?\' : \'Return \' + l.title + \' today?\' }}</span>' +
-      '          <button :id="\'vl-yes-\' + l.id" type="button" class="btn btn-primary btn-sm" :disabled="busyId !== 0" @click="giveBack(l)">' +
+      '          <button :id="\'vl-yes-\' + l.id" type="button" class="btn btn-primary btn-sm" :disabled="acting" @click="giveBack(l)">' +
       '            {{ l.state === \'reserved\' ? \'Yes, cancel\' : \'Yes, return it\' }}</button>' +
       '          <button type="button" class="btn btn-ghost btn-sm" @click="confirmId = 0">Not yet</button>' +
       '        </div>' +

@@ -7,7 +7,8 @@
 // - v-model (with .number): the date, room and duration selects are bound two ways to refs, so the
 //   select shows the ref and changing the select changes the ref.
 // - watch() on [date, room] with { immediate: true }: whenever the date or the room changes, the
-//   slots are fetched again from api/rooms.php (an older request still on its way is cancelled).
+//   slots are fetched again from api/rooms.php (an older request still on its way is cancelled by
+//   the useFetch() composable from use-fetch.js).
 // - computed(): minutes left on that day against the 60 minute daily cap (DAILY_CAP_MINUTES), the
 //   minutes left after the chosen booking, whether the choice is over the cap, and the rooms grouped
 //   by arc for the <optgroup>s. They update by themselves when the date, duration or choice changes.
@@ -69,16 +70,15 @@
       var loading = Vue.ref(true);
       var error = Vue.ref('');
       var started = false;
-      var controller = null;
       var lastKey = '';
+      var request = api.useFetch();   // composable (use-fetch.js): a newer room or date cancels the older request
 
-      // Fetches the slots for the chosen date and room; cancels the previous request first.
+      // Fetches the slots for the chosen date and room.
       function load() {
-        if (controller) { controller.abort(); }
-        controller = window.AbortController ? new AbortController() : null;
         loading.value = true;
-        api.requestJson('api/rooms.php', { query: { date: date.value, room: room.value || '' }, signal: controller ? controller.signal : undefined })
+        request.run('api/rooms.php', { query: { date: date.value, room: room.value || '' } })
           .then(function (res) {
+            if (!res) { return; }   // replaced by a newer request
             if (!res.ok) { throw new Error(res.data.error || 'Could not load the slots.'); }
             var d = res.data;
             var key = d.date + '|' + d.room.id;
@@ -100,10 +100,9 @@
             if (!started) { started = true; ctx.emit('ready'); }
           })
           .catch(function (err) {
-            if (err && err.name === 'AbortError') { return; }
             loading.value = false;
             if (!started) { ctx.emit('failed'); return; }
-            error.value = err.message || 'Could not load the slots. Reload the page to try again.';
+            error.value = (err && err.message) || 'Could not load the slots. Reload the page to try again.';
           });
       }
 

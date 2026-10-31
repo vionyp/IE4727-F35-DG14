@@ -26,7 +26,7 @@ $highlight = input_int($_GET, 'loan');
 
 $page_title = 'My Account';
 $body_class = 'page-account';
-$scripts = ['forms.js', 'rows.js', 'vue/boot.js', 'vue/loans-panel.js'];
+$scripts = ['forms.js', 'rows.js', 'vue/boot.js', 'vue/use-fetch.js', 'vue/loans-panel.js'];
 require __DIR__ . '/includes/header.php';
 ?>
 
