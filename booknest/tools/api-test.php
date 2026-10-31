@@ -225,6 +225,65 @@ check('A23', 'My Account still lists loans in PHP and loads the Vue panel', $r['
     && str_contains($r['body'], 'name="action" value="renew"') && str_contains($r['body'], 'js/vue/loans-panel.js'),
     preg_match_all('/<li class="loan-item/', $r['body']) . ' loan rows with Base forms; loans-panel.js included');
 
+// ---- 3. api/rooms.php (study room slot grid) ------------------------------------------------------
+$slotCount = (21 - 10) * 2;
+$r = $v->req('api/rooms.php');
+check('A30', 'rooms: visitor gets today\'s slots for the first open room', $r['code'] === 200 && count($r['json']['slots'] ?? []) === $slotCount
+    && ($r['json']['signedIn'] ?? true) === false && ($r['json']['minutesUsed'] ?? -1) === 0 && count($r['json']['dates'] ?? []) === 8
+    && ($r['json']['rules']['dailyCap'] ?? 0) === DAILY_CAP_MINUTES,
+    "HTTP {$r['code']}, " . count($r['json']['slots'] ?? []) . ' slots in ' . ($r['json']['room']['name'] ?? '?') . ', ' . count($r['json']['dates'] ?? []) . ' dates, cap ' . ($r['json']['rules']['dailyCap'] ?? '?'));
+
+$r = $v->req('api/rooms.php?date=2020-01-01');
+$r2 = $v->req('api/rooms.php?room=9999');
+$r3 = $v->req('api/rooms.php?date=' . rawurlencode("' OR 1=1 --") . '&room=' . rawurlencode('1 OR 1=1'));
+check('A31', 'rooms: bad date 422, unknown room 404, injection rejected', $r['code'] === 422 && ($r['json']['error'] ?? '') === 'Choose a date from today up to 7 days ahead.'
+    && $r2['code'] === 404 && ($r2['json']['error'] ?? '') === 'That room does not exist.' && $r3['code'] === 422,
+    "old date {$r['code']} \"" . ($r['json']['error'] ?? '') . "\", room 9999 {$r2['code']}, injected date {$r3['code']}");
+
+$r = $v->req('api/rooms.php', ['date' => date('Y-m-d')]);
+check('A32', 'rooms: POST refused with 405 (read only)', $r['code'] === 405 && preg_match('/^Allow:\s*GET/mi', $r['headers']) === 1, "HTTP {$r['code']}");
+
+// The grid must agree with the PHP timetable: same statuses for the same room and day.
+$busy = db_one("SELECT rb.room_id, rb.booking_date, r.name, r.floor FROM room_bookings rb JOIN study_rooms r ON r.id = rb.room_id
+                WHERE rb.status = 'confirmed' AND rb.booking_date > CURDATE() ORDER BY rb.booking_date, rb.room_id LIMIT 1");
+$api = array_column($v->req('api/rooms.php?date=' . $busy['booking_date'] . '&room=' . $busy['room_id'])['json']['slots'] ?? [], 'status');
+$page = $v->req('rooms.php?date=' . $busy['booking_date'] . '&arc=' . substr($busy['floor'], -1))['body'];
+preg_match('#<span class="room-name">' . preg_quote($busy['name'], '#') . '</span>.*?</tr>#s', $page, $rowHtml);
+preg_match_all('#class="slot slot-(\w+)#', $rowHtml[0] ?? '', $m);
+check('A33', 'rooms: slot statuses equal the PHP timetable row', $api && $api === $m[1] && in_array('taken', $api, true),
+    "{$busy['name']} on {$busy['booking_date']}: api " . implode('', array_map(fn($s) => $s[0], $api)) . ' = page ' . implode('', array_map(fn($s) => $s[0], $m[1])));
+
+$ben = new Client('ben');
+$ben->login('ben@localhost', 'Member123!');
+$benBooking = db_one("SELECT room_id, booking_date FROM room_bookings rb JOIN users u ON u.id = rb.user_id
+                      WHERE u.email = 'ben@localhost' AND rb.status = 'confirmed' AND rb.booking_date >= CURDATE() ORDER BY booking_date LIMIT 1");
+$used = (int) db_value("SELECT COALESCE(SUM(TIMESTAMPDIFF(MINUTE, start_time, end_time)), 0) FROM room_bookings rb JOIN users u ON u.id = rb.user_id
+                        WHERE u.email = 'ben@localhost' AND rb.booking_date = ? AND rb.status = 'confirmed'", [$benBooking['booking_date']]);
+$r = $ben->req('api/rooms.php?date=' . $benBooking['booking_date'] . '&room=' . $benBooking['room_id']);
+$statuses = array_count_values(array_column($r['json']['slots'] ?? [], 'status'));
+check('A34', 'rooms: member sees own bookings and minutes used', ($r['json']['signedIn'] ?? false) === true && ($r['json']['minutesUsed'] ?? -1) === $used && $used > 0
+    && (($statuses['yours'] ?? 0) + ($statuses['past'] ?? 0)) > 0,
+    "ben on {$benBooking['booking_date']}: minutesUsed " . ($r['json']['minutesUsed'] ?? '?') . " (database $used), yours " . ($statuses['yours'] ?? 0) . ', past ' . ($statuses['past'] ?? 0));
+
+// The real limit is still PHP's: posting the Base form over the cap is refused whatever the grid showed.
+$tomorrow = date('Y-m-d', strtotime('+1 day'));
+$bt = $ben->csrf();
+$free = array_values(array_filter($ben->req("api/rooms.php?date=$tomorrow&room=5")['json']['slots'] ?? [], fn($s) => $s['status'] === 'free'));
+$ben->req('process/book-room.php', ['room_id' => '5', 'date' => $tomorrow, 'start' => $free[0]['start'], 'duration' => '60', 'csrf' => $bt]);
+$ben->req('rooms.php');   // shows (and so clears) the "Booked" message before the next attempt
+$before = (int) db_value("SELECT COUNT(*) FROM room_bookings rb JOIN users u ON u.id = rb.user_id WHERE u.email = 'ben@localhost' AND rb.status = 'confirmed'");
+$ben->req('process/book-room.php', ['room_id' => '5', 'date' => $tomorrow, 'start' => $free[4]['start'], 'duration' => '30', 'csrf' => $bt]);
+$after = (int) db_value("SELECT COUNT(*) FROM room_bookings rb JOIN users u ON u.id = rb.user_id WHERE u.email = 'ben@localhost' AND rb.status = 'confirmed'");
+$capFlash = $flash($ben->req('rooms.php?date=' . $tomorrow)['body']);
+$r = $ben->req("api/rooms.php?date=$tomorrow&room=5");
+check('A35', 'rooms: over the daily cap the server refuses; the API then shows 60 used', $after === $before && str_contains($capFlash, 'The daily limit is 60 minutes')
+    && ($r['json']['minutesUsed'] ?? 0) === 60, "\"$capFlash\" | bookings $before -> $after | api minutesUsed " . ($r['json']['minutesUsed'] ?? '?'));
+
+$r = $v->req('rooms.php');
+check('A36', 'Study Rooms still prints the PHP timetable and loads the Vue files', $r['code'] === 200 && str_contains($r['body'], 'data-availability')
+    && preg_match_all('/class="slot slot-free"/', $r['body']) > 0 && str_contains($r['body'], 'js/vue/slot-cell.js') && str_contains($r['body'], 'js/vue/room-slots.js'),
+    preg_match_all('/<a class="slot slot-free"/', $r['body']) . ' free links in the PHP table; slot-cell.js and room-slots.js included');
+
 // ---- Summary --------------------------------------------------------------------------------------
 $passed = count(array_filter($results, fn($x) => $x[2]));
 echo str_repeat('-', 100) . "\n$passed of " . count($results) . " api checks passed.\n";
