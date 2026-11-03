@@ -1,6 +1,6 @@
 // Modern Enhancement: browser tests for the Vue screens, run in headless Microsoft Edge.
 //   node tools/vue-browser-test.mjs            (all groups)
-//   node tools/vue-browser-test.mjs search     (one group: search, loans or rooms)
+//   node tools/vue-browser-test.mjs search     (one group: search, loans, rooms, composable, borrow)
 // Needs Node 22+ (built-in fetch and WebSocket), Edge, Apache and MySQL with the seed data.
 // It drives the real pages through the Chrome DevTools Protocol: types with real key events,
 // counts requests to api/, blocks the Vue file or an endpoint to test the fallbacks, turns
@@ -501,7 +501,145 @@ async function composableTests(browser) {
   await t.close();
 }
 
-const groups = { search: searchTests, loans: loansTests, rooms: roomsTests, composable: composableTests };
+// ---- 5. Borrow box on the book page -------------------------------------------------------------------
+// Reads the box: the pill, the main buttons, the shelf button, the message and the header badge.
+const BOX = `({ vb: !!document.querySelector('.vb'), pill: document.querySelector('.vb .avail')?.textContent || '',
+  buttons: [...document.querySelectorAll('.vb .book-actions .btn')].map(b => b.textContent.trim().replace(/\\s+/g, ' ')),
+  shelf: document.querySelector('.vb button[aria-pressed]')?.getAttribute('aria-pressed') || '',
+  msg: document.querySelector('.vb-message')?.textContent.trim() || '',
+  notice: document.querySelector('.vb .notice:not(.vb-message)')?.textContent.trim().replace(/\\s+/g, ' ') || '',
+  badge: document.querySelector('.loans-link .badge')?.textContent || '', same: window.__same || 'no',
+  baseHidden: document.querySelector('.book-info > .avail-box[data-vue-replaced]')?.hidden === true && document.querySelector('.book-info > .book-actions').hidden })`;
+// Clicks the button in the box (or the picker) whose text is exactly the given words.
+const BTN = (scope, text) => `[...document.querySelectorAll('${scope} button')].find(b => b.textContent.trim().replace(/\\s+/g, ' ') === ${JSON.stringify(text)})`;
+
+async function borrowTests(browser) {
+  const v = await Tab.open(browser);
+  await v.go('book.php?id=29');
+  const vm = await v.waitFor('!!document.querySelector(".vb .book-actions")', 8000);
+  const vs = await v.eval(BOX);
+  check('F01', 'Borrow: box mounts for a visitor with sign in links', vm && vs.baseHidden && vs.buttons[0] === 'Sign in to borrow' && vs.buttons.includes('Sign in to save')
+    && vs.pill === 'Available to borrow' && v.errors.length === 0, `${vs.pill}; buttons: ${vs.buttons.join(' | ')}; JS errors: ${v.errors.length}`);
+  await v.close();
+
+  const t = await Tab.open(browser);
+  await t.login('chloe@localhost', 'Member123!');   // 2 loans, nothing overdue, no fees
+  await t.go('book.php?id=29');
+  await t.waitFor('!!document.querySelector(".vb .book-actions")', 8000);
+  await t.eval('window.__same = "yes"');
+  await t.shot('borrow-desktop');
+  const since = Date.now();
+  await t.clickEl(BTN('.vb .book-actions', 'Borrow'));
+  await t.waitFor('!!document.getElementById("vb-date")', 3000);
+  const focused = await t.eval('document.activeElement.id');
+  const due0 = await t.eval('document.getElementById("vb-due").textContent');
+  await t.eval(`(() => { const s = document.getElementById('vb-date'); s.selectedIndex = 2; s.dispatchEvent(new Event('change')); })()`);
+  await sleep(150);
+  const pick = await t.eval(`({ due: document.getElementById('vb-due').textContent.replace(/\\s+/g, ' '), value: document.getElementById('vb-date').value })`);
+  const posts = t.apiCalls('book.php', since).filter((r) => r.method === 'POST').length;
+  const expectDue = await t.eval(`fetch('${SITE}api/book.php?id=29').then(r => r.json()).then(d => d.dates[2].dueLong)`);
+  await t.shot('borrow-picker');
+  check('F02', 'Borrow: picker opens in place, v-model date, computed due date', focused === 'vb-date' && due0 !== pick.due && pick.due.includes(expectDue) && posts === 0,
+    `focus on #${focused}; date ${pick.value} -> "${pick.due.slice(0, 50)}"; POSTs while picking: ${posts}`);
+
+  await t.clickEl(BTN('.vb-picker', 'Confirm loan'));
+  await t.waitFor(`(document.querySelector('.vb-message')?.textContent || '').startsWith('Borrowed.')`, 6000);
+  const s = await t.eval(BOX);
+  const link = await t.eval(`document.querySelector('.vb-message a')?.getAttribute('href') || ''`);
+  check('F03', 'Borrow: Confirm borrows without reload; box, pill and badge follow', s.same === 'yes' && s.msg.startsWith('Borrowed. Collect The Hobbit at the front desk from')
+    && s.buttons[0] === 'See your loan' && s.pill.startsWith('Collect from') && s.badge === '3' && /account\.php\?loan=\d+#loans/.test(link),
+    `"${s.msg.slice(0, 60)}..." | ${s.pill} | ${s.buttons[0]} | badge ${s.badge} | same page: ${s.same}`);
+
+  await t.clickEl(`document.querySelector('.vb button[aria-pressed]')`);
+  await t.waitFor(`document.querySelector('.vb button[aria-pressed]').getAttribute('aria-pressed') === 'true'`, 4000);
+  const on = await t.eval(BOX);
+  await t.clickEl(`document.querySelector('.vb button[aria-pressed]')`);
+  await t.waitFor(`document.querySelector('.vb button[aria-pressed]').getAttribute('aria-pressed') === 'false'`, 4000);
+  const off = await t.eval(BOX);
+  check('F04', 'Borrow: Save to shelf toggles in place (aria-pressed)', on.shelf === 'true' && on.msg.startsWith('The Hobbit is on your shelf') && off.shelf === 'false'
+    && off.msg === 'The Hobbit was removed from your shelf.' && off.same === 'yes', `after save: ${on.shelf} "${on.msg.slice(0, 30)}"; after remove: ${off.shelf} "${off.msg}"`);
+
+  await t.go('book.php?id=25');   // Project Hail Mary: the only copy is out, two people waiting
+  await t.waitFor('!!document.querySelector(".vb .book-actions")', 8000);
+  await t.eval('window.__same = "yes"');
+  const q0 = await t.eval(BOX);
+  await t.clickEl(BTN('.vb .book-actions', 'Join the queue'));
+  await t.waitFor(`(document.querySelector('.vb-message')?.textContent || '').startsWith('You are in the queue')`, 4000);
+  const q1 = await t.eval(BOX);
+  await t.clickEl(BTN('.vb .book-actions', 'Leave the queue'));
+  await t.waitFor(`(document.querySelector('.vb-message')?.textContent || '') === 'You have left the queue.'`, 4000);
+  const q2 = await t.eval(BOX);
+  check('F05', 'Borrow: Join and Leave the queue in place', q0.buttons[0] === 'Join the queue' && q1.pill === 'You are #3 in line' && q1.buttons[0] === 'Leave the queue'
+    && q1.notice.startsWith('We will email you') && q2.buttons[0] === 'Join the queue' && q2.same === 'yes', `${q0.buttons[0]} -> "${q1.pill}" -> ${q2.buttons[0]}`);
+  check('F06', 'Borrow: no JavaScript errors (member)', t.errors.length === 0, t.errors.join(' | ') || 'none');
+
+  // A second tab with the same member, still showing Borrow, after the first tab borrowed: PHP refuses.
+  const stale = await Tab.open(browser);
+  await stale.login('chloe@localhost', 'Member123!');
+  await stale.go('book.php?id=31');   // Sapiens
+  await stale.waitFor('!!document.querySelector(".vb .book-actions")', 8000);
+  await t.go('book.php?id=31');
+  await t.waitFor('!!document.querySelector(".vb .book-actions")', 8000);
+  await t.clickEl(BTN('.vb .book-actions', 'Borrow'));
+  await t.clickEl(BTN('.vb-picker', 'Confirm loan'));
+  await t.waitFor(`(document.querySelector('.vb-message')?.textContent || '').startsWith('Borrowed.')`, 6000);
+  await stale.clickEl(BTN('.vb .book-actions', 'Borrow'));
+  await stale.clickEl(BTN('.vb-picker', 'Confirm loan'));
+  await stale.waitFor(`!!document.querySelector('.vb-message.notice-alert')`, 6000);
+  const st = await stale.eval(BOX);
+  check('F07', 'Borrow: PHP refusal shown as sent (stale second tab)', st.msg === 'You already have Sapiens on loan. Return it before borrowing it again.' && st.buttons[0] === 'See your loan',
+    `"${st.msg}" | box now: ${st.buttons[0]}`);
+
+  // Expired CSRF token: the page's token no longer matches the session.
+  await stale.eval(`document.querySelectorAll('input[name="csrf"]').forEach(i => i.value = 'expired')`);
+  await stale.clickEl(`document.querySelector('.vb button[aria-pressed]')`);
+  await stale.waitFor(`(document.querySelector('.vb-message')?.textContent || '').startsWith('Your session expired')`, 4000);
+  const ex = await stale.eval(BOX);
+  check('F08', 'Borrow: expired CSRF token, PHP refuses and nothing changes', ex.msg.startsWith('Your session expired before the form was sent') && ex.shelf === 'false',
+    `"${ex.msg.slice(0, 50)}..." | shelf still ${ex.shelf}`);
+
+  // Signed out meanwhile (session cookie gone): 401 with a sign in link.
+  await stale.cdp.send('Network.deleteCookies', { name: 'bn_session', url: SITE });
+  await stale.clickEl(`document.querySelector('.vb button[aria-pressed]')`);
+  await stale.waitFor(`(document.querySelector('.vb-message')?.textContent || '').startsWith('Please sign in again')`, 4000);
+  const out = await stale.eval(`({ msg: document.querySelector('.vb-message').textContent.trim(), link: document.querySelector('.vb-message a')?.getAttribute('href') })`);
+  check('F09', 'Borrow: signed out meanwhile, PHP answers 401 with a sign in link', out.msg.startsWith('Please sign in again to borrow or save books.') && out.link === '/booknest/sign-in.php',
+    `"${out.msg.slice(0, 50)}" -> ${out.link}`);
+  const refused = stale.refusals.map((r) => (r.match(/status of (\d+)/) || [])[1] + ' ' + (r.match(/api\/\w+\.php/) || [''])[0]);
+  check('F10', 'Borrow: no JS errors; only the expected 422, 403, 401 refusals', stale.errors.length === 0 && refused.join(',') === '422 api/book.php,403 api/book.php,401 api/book.php',
+    `JS errors: ${stale.errors.length}; network refusals: ${refused.join(', ')}`);
+  await stale.close();
+  await t.close();
+
+  const blocked = await Tab.open(browser);
+  await blocked.login('budy@gmail.com', 'budy123!');
+  await blocked.go('book.php?id=30');
+  await blocked.waitFor('!!document.querySelector(".vb .book-actions")', 8000);
+  const bl = await blocked.eval(BOX);
+  check('F11', 'Borrow: member with overdue books sees why, no Borrow button', !bl.buttons.includes('Borrow') && /^New loans are paused\. You have \d+ overdue books?\./.test(bl.notice),
+    `buttons: ${bl.buttons.join(' | ')}; "${bl.notice.slice(0, 70)}..."`);
+  await blocked.close();
+
+  const nojs = await Tab.open(browser);
+  await nojs.go('book.php?id=29', { js: false });
+  const html = await nojs.html();
+  check('F12', 'Borrow: JavaScript off, the PHP box and links are there', !html.includes('class="vb"') && html.includes('Sign in to borrow') && html.includes('class="avail-box"'),
+    'PHP box shown, no Vue markup');
+  await nojs.close();
+
+  const nv = await Tab.open(browser);
+  await nv.login('aisha@localhost', 'Member123!');
+  await nv.go('book.php?id=38', { block: ['*vue.global.prod.js*'] });
+  await sleep(600);
+  const before = await nv.eval(`({ vb: !!document.querySelector('.vb'), base: !document.querySelector('.book-actions').hidden })`);
+  await nv.clickEl(`document.querySelector('.book-actions button[aria-pressed]')`);
+  await nv.waitFor(`(document.querySelector('.flash p')?.textContent || '').includes('is on your shelf')`, 8000);
+  const flash = await nv.eval(`document.querySelector('.flash p')?.textContent || ''`);
+  check('F13', 'Borrow: Vue blocked, the Base shelf form still works', !before.vb && before.base && flash.startsWith('Frankenstein is on your shelf'), `Vue app: ${before.vb}; Base form: "${flash}"`);
+  await nv.close();
+}
+
+const groups = { search: searchTests, loans: loansTests, rooms: roomsTests, composable: composableTests, borrow: borrowTests };
 
 // Starts Edge, runs the chosen groups, prints a summary and exits with 0 only if all passed.
 async function main() {
@@ -521,6 +659,7 @@ async function main() {
     }
   } catch (e) {
     check('ERR', 'Test run stopped', false, e.message);
+    console.log(e.message);
   }
   browser.close();
   edge.kill();
