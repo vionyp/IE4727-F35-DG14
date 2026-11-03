@@ -1,6 +1,6 @@
 // Modern Enhancement: browser tests for the Vue screens, run in headless Microsoft Edge.
 //   node tools/vue-browser-test.mjs            (all groups)
-//   node tools/vue-browser-test.mjs search     (one group: search, loans, rooms, composable, borrow, lookup)
+//   node tools/vue-browser-test.mjs search     (one group: search, loans, rooms, composable, borrow, lookup, toast)
 // Needs Node 22+ (built-in fetch and WebSocket), Edge, Apache and MySQL with the seed data.
 // It drives the real pages through the Chrome DevTools Protocol: types with real key events,
 // counts requests to api/, blocks the Vue file or an endpoint to test the fallbacks, turns
@@ -734,7 +734,58 @@ async function lookupTests(browser) {
   await a.close();
 }
 
-const groups = { search: searchTests, loans: loansTests, rooms: roomsTests, composable: composableTests, borrow: borrowTests, lookup: lookupTests };
+// ---- 7. <NoticeBox> slots and <Teleport> toasts ---------------------------------------------------------
+const TOASTS = `[...document.querySelectorAll('.vt-item')].map(li => ({ text: li.textContent.trim(),
+  inBody: li.parentElement.parentElement === document.body, hidden: li.parentElement.getAttribute('aria-hidden'),
+  fixed: getComputedStyle(li.parentElement).position }))`;
+
+async function toastTests(browser) {
+  const t = await Tab.open(browser);
+  await t.login('chloe@localhost', 'Member123!');
+  await t.go('book.php?id=30');   // Harry Potter: five copies
+  await t.waitFor('!!document.querySelector(".vb .book-actions")', 8000);
+  await t.clickEl(BTN('.vb .book-actions', 'Borrow'));
+  await t.clickEl(BTN('.vb-picker', 'Confirm loan'));
+  await t.waitFor(`!!document.querySelector('.vt-item')`, 6000);
+  const shown = await t.eval(TOASTS);
+  const inBox = await t.eval(`!!document.querySelector('.vb .vt-item')`);
+  await t.shot('toast');
+  check('H01', 'Toast: <Teleport> draws it at the end of <body>, fixed, not in the box', shown.length === 1 && shown[0].text === "Borrowed Harry Potter and the Philosopher's Stone"
+    && shown[0].inBody && !inBox && shown[0].fixed === 'fixed' && shown[0].hidden === 'true', JSON.stringify(shown[0] || {}));
+  const gone = await t.waitFor(`document.querySelectorAll('.vt-item').length === 0`, 7000);
+  check('H02', 'Toast: removes itself after about 5 seconds', gone, `gone: ${gone}`);
+
+  await t.go('account.php');
+  await t.waitFor('!!document.querySelector(".vl .loan-item")', 8000);
+  const title = 'Fourth Wing';
+  const row = `[...document.querySelectorAll('.vl .loan-item')].find(li => li.querySelector('h3 a').textContent === '${title}')`;
+  await t.clickEl(`[...${row}.querySelectorAll('button')].find(b => b.textContent.trim() === 'Return')`);
+  await t.clickEl(`${row}.querySelector('[id^="vl-yes-"]')`);
+  await t.waitFor(`!!document.querySelector('.vt-item')`, 6000);
+  const ret = await t.eval(TOASTS);
+  check('H03', 'Toast: the loans panel shares the same store (Returned ...)', ret.length === 1 && ret[0].text === 'Returned Fourth Wing' && ret[0].inBody, JSON.stringify(ret[0] || {}));
+  check('H04', 'Toast: no JavaScript errors', t.errors.length === 0, t.errors.join(' | ') || 'none');
+  await t.close();
+
+  const b = await Tab.open(browser);
+  await b.login('budy@gmail.com', 'budy123!');
+  await b.go('book.php?id=30');
+  await b.waitFor('!!document.querySelector(".vb .vn")', 8000);
+  const slots = await b.eval(`(() => { const n = document.querySelector('.vb .vn.notice-alert'); return n && { strong: n.querySelector('.vn-body strong')?.textContent,
+    action: n.querySelector('.vn-actions a')?.textContent, href: n.querySelector('.vn-actions a')?.getAttribute('href'), icon: !!n.querySelector(':scope > svg.icon'), role: n.getAttribute('role') }; })()`);
+  check('H05', '<NoticeBox>: default slot keeps markup, named slot "actions" filled', slots && slots.strong === 'New loans are paused.' && slots.action === 'See your loans'
+    && slots.href === '/booknest/account.php#loans' && slots.icon && slots.role === 'status', JSON.stringify(slots));
+  await b.go('add-book.php?serial=BNT-000888');
+  await b.waitFor('!!document.querySelector(".vsl-free .vn-actions button")', 8000);
+  const free = await b.eval(`(() => { const n = document.querySelector('.vsl-free'); return { kind: n.classList.contains('notice-ok') && n.classList.contains('vn'),
+    button: n.querySelector('.vn-actions button').textContent.trim(), body: n.querySelector('.vn-body').textContent.trim() }; })()`);
+  check('H06', '<NoticeBox>: reused by the serial lookup with a button in its slot', free.kind && free.button === 'Use BNT-000888 for the new book'
+    && free.body === 'No book has the serial number BNT-000888. You can add it below.', JSON.stringify(free));
+  check('H07', '<NoticeBox>: no JavaScript errors', b.errors.length === 0, b.errors.join(' | ') || 'none');
+  await b.close();
+}
+
+const groups = { search: searchTests, loans: loansTests, rooms: roomsTests, composable: composableTests, borrow: borrowTests, lookup: lookupTests, toast: toastTests };
 
 // Starts Edge, runs the chosen groups, prints a summary and exits with 0 only if all passed.
 async function main() {

@@ -12,6 +12,8 @@
 // - v-model on the lookup box; a watch() keeps it in capitals, like forms.js does for the Base box.
 // - emits: <SerialLookup> emits 'use' with the free number; the page script copies it into the Base
 //   form field, so the form that is posted is still the PHP form.
+// - Slots: the "number is free" notice is a <notice-box> (notice-box.js) with the message in its
+//   default slot and the "Use ... for the new book" button in its named slot "actions".
 // - Lifecycle hooks: <SerialStatus> listens to the Base input with addEventListener in onMounted() and
 //   removes the listener in onBeforeUnmount(), because that input belongs to the PHP page, not to Vue.
 // Server rules: this only looks numbers up. process/add-book.php still checks the format and that the
@@ -77,6 +79,7 @@
     name: 'SerialLookup',
     props: { initialSerial: { type: String, default: '' } },
     emits: ['ready', 'failed', 'use'],
+    components: window.BookNestVue ? { NoticeBox: window.BookNestVue.components.NoticeBox } : {},
 
     setup: function (props, ctx) {
       var Vue = window.Vue;
@@ -119,10 +122,9 @@
       '    <p v-else-if="lookup.state.value === \'checking\'" class="hint vsl-hint">Looking up {{ lookup.settled.value }}...</p>' +
       '    <p v-else-if="lookup.state.value === \'bad\' || lookup.state.value === \'error\'" class="notice" role="status">{{ lookup.problem.value }}' +
       '      <a v-if="lookup.signin.value" :href="lookup.signin.value">Sign in</a></p>' +
-      '    <div v-else-if="lookup.state.value === \'free\'" class="notice notice-ok vsl-free" role="status">' +
-      '      <span>{{ lookup.data.value.message }}</span>' +
-      '      <button type="button" class="btn btn-secondary btn-sm" @click="use">Use {{ lookup.settled.value }} for the new book</button>' +
-      '    </div>' +
+      '    <notice-box v-else-if="lookup.state.value === \'free\'" kind="ok" icon="check" class="vsl-free">{{ lookup.data.value.message }}' +
+      '      <template #actions><button type="button" class="btn btn-secondary btn-sm" @click="use">Use {{ lookup.settled.value }} for the new book</button></template>' +
+      '    </notice-box>' +
       '    <div v-else-if="lookup.state.value === \'taken\'" class="serial-panel" role="status">' +
       '      <img class="serial-cover" :src="lookup.data.value.book.cover" :alt="lookup.data.value.book.coverAlt" width="120" height="180" decoding="async">' +
       '      <div>' +

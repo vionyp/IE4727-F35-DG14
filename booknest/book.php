@@ -33,7 +33,7 @@ $similar = db_all('SELECT ' . card_columns() . " FROM books b WHERE b.status = '
 $page_title = $book['title'];
 $page_desc = $book['title'] . ' by ' . $book['author'] . '. ' . $book['hook'];
 $body_class = 'page-book';
-$scripts = ['rows.js', 'vue/boot.js', 'vue/use-fetch.js', 'vue/borrow-box.js'];
+$scripts = ['rows.js', 'vue/boot.js', 'vue/use-fetch.js', 'vue/notice-box.js', 'vue/toast.js', 'vue/borrow-box.js'];
 $crumbs = [['Home', url()], [$book['category'], url('catalogue.php?category=' . $book['category_slug'])], [$book['title'], null]];
 require __DIR__ . '/includes/header.php';
 ?>

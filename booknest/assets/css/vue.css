@@ -68,3 +68,27 @@
 .vss { margin: .25rem 0 0; min-height: 1.4em; }
 .vss.is-free { color: var(--teal); }
 .vss.is-taken { color: #F08A84; font-weight: 550; }
+
+/* 7. <NoticeBox> (notice-box.js) and toasts (toast.js) ---------------------------------------- */
+.vn { flex-wrap: nowrap; align-items: flex-start; }
+.vn > .icon { flex: none; margin-top: .2rem; }
+.vn-body { margin: 0; flex: 1 1 auto; }
+.vn-actions { flex: none; display: flex; gap: var(--s2); align-items: center; }
+@media (max-width: 560px) {
+  .vn { flex-wrap: wrap; }
+  .vn-actions { flex-basis: 100%; }
+}
+
+/* <Teleport to="body">: the list sits at the end of <body>, fixed to the bottom right corner. */
+.vt { position: fixed; right: var(--s4); bottom: var(--s4); z-index: 60; display: grid; gap: var(--s2); width: min(22rem, calc(100vw - 2 * var(--s4)));
+  margin: 0; padding: 0; list-style: none; pointer-events: none; }
+.vt-item { pointer-events: auto; cursor: pointer; padding: var(--s3) var(--s4); border-radius: var(--radius); border: 1px solid rgba(var(--glow-teal), .5);
+  border-left: 4px solid var(--teal); background: var(--elevated, #1d222b); color: var(--text); box-shadow: var(--shadow); font-weight: 550; }
+.vt-item.is-error { border-color: rgba(229, 97, 90, .5); border-left-color: var(--danger); }
+.toast-enter-active, .toast-leave-active { transition: opacity .3s var(--ease), transform .3s var(--ease); }
+.toast-enter-from { opacity: 0; transform: translateY(1rem); }
+.toast-leave-to { opacity: 0; transform: translateX(2rem); }
+.toast-move { transition: transform .3s var(--ease); }
+@media (prefers-reduced-motion: reduce) {
+  .toast-enter-active, .toast-leave-active, .toast-move { transition: none; }
+}
