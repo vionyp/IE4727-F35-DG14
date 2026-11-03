@@ -58,3 +58,13 @@
 .vb-picker { display: grid; gap: var(--s3); margin-top: var(--s4); max-width: 30rem; }
 .vb-picker .panel-title, .vb-picker .notice { margin: 0; }
 .vb-picker .field { margin: 0; }
+
+/* 6. Serial lookup on Add a book (serial-lookup.js) ------------------------------------------ */
+.vsl { display: grid; gap: var(--s3); }
+.vsl-hint { margin: 0; }
+.vsl #vsl-msg .notice { margin-block: 0; }
+.vsl .serial-panel { margin: var(--s2) 0 0; padding-top: var(--s5); border-top: 1px solid var(--border); }
+.vsl-free { justify-content: space-between; }
+.vss { margin: .25rem 0 0; min-height: 1.4em; }
+.vss.is-free { color: var(--teal); }
+.vss.is-taken { color: #F08A84; font-weight: 550; }

@@ -1,6 +1,6 @@
 // Modern Enhancement: browser tests for the Vue screens, run in headless Microsoft Edge.
 //   node tools/vue-browser-test.mjs            (all groups)
-//   node tools/vue-browser-test.mjs search     (one group: search, loans, rooms, composable, borrow)
+//   node tools/vue-browser-test.mjs search     (one group: search, loans, rooms, composable, borrow, lookup)
 // Needs Node 22+ (built-in fetch and WebSocket), Edge, Apache and MySQL with the seed data.
 // It drives the real pages through the Chrome DevTools Protocol: types with real key events,
 // counts requests to api/, blocks the Vue file or an endpoint to test the fallbacks, turns
@@ -639,7 +639,102 @@ async function borrowTests(browser) {
   await nv.close();
 }
 
-const groups = { search: searchTests, loans: loansTests, rooms: roomsTests, composable: composableTests, borrow: borrowTests };
+// ---- 6. Serial lookup on Add a book --------------------------------------------------------------------
+const LOOKUP = `({ vsl: !!document.querySelector('.vsl'), box: document.getElementById('vsl-serial')?.value,
+  msg: document.getElementById('vsl-msg')?.textContent.trim().replace(/\\s+/g, ' ') || '',
+  title: document.querySelector('.vsl .serial-panel h3')?.textContent || '', status: document.querySelector('.vsl .pill')?.textContent || '',
+  open: !!document.querySelector('.vsl .serial-panel a.btn'), line: document.getElementById('ab-serial-status')?.textContent.trim().replace(/\\s+/g, ' ') || '',
+  same: window.__same || 'no', address: location.search })`;
+
+async function lookupTests(browser) {
+  const t = await Tab.open(browser);
+  await t.login('aisha@localhost', 'Member123!');
+  await t.go('add-book.php');
+  const mounted = await t.waitFor('!!document.querySelector(".vsl") && /is free to use/.test(document.getElementById("ab-serial-status")?.textContent || "")', 8000);
+  await t.eval('window.__same = "yes"');
+  const s0 = await t.eval(`({ ...${LOOKUP}, baseHidden: document.querySelector('.lookup > .lookup-form[data-vue-replaced]')?.hidden === true,
+    suggested: document.getElementById('ab-serial').value })`);
+  check('G01', 'Lookup: mounts; the form field already says the number is free', mounted && s0.baseHidden && s0.line === `✓ ${s0.suggested} is free to use.`,
+    `Base form hidden: ${s0.baseHidden}; under the field: "${s0.line}"`);
+
+  let since = Date.now();
+  await t.type('#vsl-serial', 'bnt-000129', 50);
+  const during = t.apiCalls('serial.php', since).length;
+  await t.waitFor(`document.querySelector('.vsl .serial-panel h3')?.textContent === 'The Hobbit'`, 4000);
+  const s1 = await t.eval(LOOKUP);
+  const calls = t.apiCalls('serial.php', since).length;
+  await t.shot('lookup-found');
+  check('G02', 'Lookup: typing finds the book live (capitals, debounce, one request)', s1.box === 'BNT-000129' && during === 0 && calls === 1 && s1.open
+    && s1.address === '?serial=BNT-000129' && s1.same === 'yes', `box "${s1.box}", requests while typing ${during}, after ${calls}; "${s1.title}", address ${s1.address}`);
+
+  await t.type('#vsl-serial', 'BNT-000143', 0);
+  await t.waitFor(`document.querySelector('.vsl .pill')?.textContent === 'Pending'`, 4000);
+  const s2 = await t.eval(LOOKUP);
+  check('G03', 'Lookup: a pending book shows its status, no book page link', s2.status === 'Pending' && !s2.open, `"${s2.title}" ${s2.status}, link: ${s2.open}`);
+
+  since = Date.now();
+  await t.type('#vsl-serial', 'BNT-12', 0);
+  await sleep(500);
+  const typing = await t.eval(LOOKUP);
+  await t.type('#vsl-serial', 'XYZ', 0);
+  await sleep(500);
+  const bad = await t.eval(LOOKUP);
+  check('G04', 'Lookup: half typed waits, wrong format explains, no requests', typing.msg.startsWith('Keep typing') && bad.msg === 'Serial numbers look like BNT-000123: the letters BNT, a hyphen and six digits.'
+    && t.apiCalls('serial.php', since).length === 0, `"${typing.msg.slice(0, 30)}..." | "${bad.msg.slice(0, 40)}..." | requests ${t.apiCalls('serial.php', since).length}`);
+
+  await t.type('#vsl-serial', 'BNT-000777', 0);
+  await t.waitFor(`!!document.querySelector('.vsl-free button')`, 4000);
+  const free = await t.eval(LOOKUP);
+  await t.clickEl(`document.querySelector('.vsl-free button')`);
+  await t.waitFor(`/BNT-000777 is free/.test(document.getElementById('ab-serial-status').textContent)`, 4000);
+  const used = await t.eval(`({ field: document.getElementById('ab-serial').value, focus: document.activeElement.id, ...${LOOKUP} })`);
+  check('G05', 'Lookup: free number, "Use" fills the form field (emit), focus moves on', free.msg.startsWith('No book has the serial number BNT-000777. You can add it below.')
+    && used.field === 'BNT-000777' && used.focus === 'ab-title' && used.line === '✓ BNT-000777 is free to use.', `field ${used.field}, focus #${used.focus}, "${used.line}"`);
+
+  await t.type('#ab-serial', 'BNT-000101', 0);
+  await t.waitFor(`/already in the library/.test(document.getElementById('ab-serial-status').textContent)`, 4000);
+  const taken = await t.eval(LOOKUP);
+  check('G06', 'Lookup: form field warns at once when the number is taken', taken.line.startsWith('✗ BNT-000101 is already in the library (Atomic Habits). Choose another number'),
+    `"${taken.line}"`);
+
+  // The warning is only help: posting the form anyway is still refused by process/add-book.php.
+  await t.eval(`document.getElementById('add').submit()`);
+  await t.waitFor(`!!document.querySelector('.flash p')`, 8000);
+  const server = await t.eval(`({ flash: document.querySelector('.flash p').textContent, field: document.querySelector('#ab-serial ~ .field-error, .field-error')?.textContent || '' })`);
+  check('G07', 'Lookup: the server still refuses a taken serial (3-layer rule kept)', server.flash.startsWith('Please fix the highlighted fields') && server.field.includes('Serial BNT-000101 is already in the library'),
+    `"${server.flash.slice(0, 40)}..." | field: "${server.field}"`);
+  check('G08', 'Lookup: no JavaScript errors', t.errors.length === 0, t.errors.join(' | ') || 'none');
+
+  await t.go('add-book.php');
+  await t.waitFor('!!document.querySelector(".vsl")', 8000);
+  await t.cdp.send('Network.deleteCookies', { name: 'bn_session', url: SITE });
+  await t.type('#vsl-serial', 'BNT-000130', 0);
+  await t.waitFor(`/sign in again/.test(document.getElementById('vsl-msg').textContent)`, 4000);
+  const out = await t.eval(`({ msg: document.getElementById('vsl-msg').textContent.trim(), link: document.querySelector('#vsl-msg a')?.getAttribute('href') })`);
+  check('G09', 'Lookup: signed out meanwhile, 401 message with a sign in link', out.msg.startsWith('Please sign in again to look up a serial number.') && out.link === '/booknest/sign-in.php',
+    `"${out.msg.slice(0, 50)}" -> ${out.link}`);
+  await t.close();
+
+  const a = await Tab.open(browser);
+  await a.login('aisha@localhost', 'Member123!');
+  await a.go('add-book.php?serial=bnt-000129');
+  await a.waitFor(`document.querySelector('.vsl .serial-panel h3')?.textContent === 'The Hobbit'`, 6000);
+  const fromUrl = await a.eval(LOOKUP);
+  check('G10', 'Lookup: a number in the address is looked up on load', fromUrl.title === 'The Hobbit' && fromUrl.box === 'BNT-000129', `"${fromUrl.title}", box ${fromUrl.box}`);
+  await a.go('add-book.php?serial=BNT-000129', { js: false });
+  const html = await a.html();
+  check('G11', 'Lookup: JavaScript off, the PHP lookup form and result work', !html.includes('class="vsl"') && html.includes('class="lookup-form"') && html.includes('<h3>The Hobbit</h3>'),
+    'PHP GET lookup shows The Hobbit, no Vue markup');
+  await a.go('add-book.php', { block: ['*vue.global.prod.js*'] });
+  await sleep(500);
+  await a.eval(`(() => { document.getElementById('lookup-serial').value = 'BNT-000101'; document.querySelector('.lookup-form').submit(); })()`);
+  await a.waitFor(`(document.querySelector('.lookup .serial-panel h3')?.textContent || '') === 'Atomic Habits'`, 8000);
+  const nv = await a.eval(`({ vsl: !!document.querySelector('.vsl'), title: document.querySelector('.lookup .serial-panel h3')?.textContent })`);
+  check('G12', 'Lookup: Vue blocked, the Base Look up form still works', !nv.vsl && nv.title === 'Atomic Habits', `Vue app: ${nv.vsl}; Base result: ${nv.title}`);
+  await a.close();
+}
+
+const groups = { search: searchTests, loans: loansTests, rooms: roomsTests, composable: composableTests, borrow: borrowTests, lookup: lookupTests };
 
 // Starts Edge, runs the chosen groups, prints a summary and exits with 0 only if all passed.
 async function main() {
