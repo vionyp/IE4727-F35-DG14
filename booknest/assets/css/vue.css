@@ -50,3 +50,11 @@
 .vr-time { font-size: .72rem; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
 .vr-grid.is-loading { opacity: .55; }
 .vr-note { margin: 0; }
+
+/* 5. Borrow box on the book page (borrow-box.js) --------------------------------------------- */
+.vb { display: grid; }
+.vb .notice { margin-block: var(--s4) 0; }
+.vb-message:focus { outline: 2px solid var(--focus); outline-offset: 2px; }
+.vb-picker { display: grid; gap: var(--s3); margin-top: var(--s4); max-width: 30rem; }
+.vb-picker .panel-title, .vb-picker .notice { margin: 0; }
+.vb-picker .field { margin: 0; }

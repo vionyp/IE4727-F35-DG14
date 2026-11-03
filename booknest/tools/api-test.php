@@ -284,6 +284,86 @@ check('A36', 'Study Rooms still prints the PHP timetable and loads the Vue files
     && preg_match_all('/class="slot slot-free"/', $r['body']) > 0 && str_contains($r['body'], 'js/vue/slot-cell.js') && str_contains($r['body'], 'js/vue/room-slots.js'),
     preg_match_all('/<a class="slot slot-free"/', $r['body']) . ' free links in the PHP table; slot-cell.js and room-slots.js included');
 
+// ---- 4. api/book.php (borrow box) -----------------------------------------------------------------
+$r = $v->req('api/book.php?id=29');
+check('A40', 'book: visitor gets the copies, dates and a sign in link', $r['code'] === 200 && $r['isJson'] && ($r['json']['signedIn'] ?? true) === false
+    && ($r['json']['book']['title'] ?? '') === 'The Hobbit' && count($r['json']['dates'] ?? []) === COLLECT_AHEAD_DAYS + 1 && ($r['json']['blocks'] ?? null) === []
+    && str_contains($r['json']['links']['signin'] ?? '', 'sign-in.php?return='),
+    'HTTP ' . $r['code'] . ', ' . ($r['json']['book']['availability']['text'] ?? '?') . ', ' . count($r['json']['dates'] ?? []) . ' dates');
+
+$r1 = $v->req('api/book.php?id=999999');
+$r2 = $v->req('api/book.php?id=' . rawurlencode("29' OR '1'='1"));
+$pending = (int) db_value("SELECT id FROM books WHERE status = 'pending' LIMIT 1");
+$r3 = $v->req('api/book.php?id=' . $pending);
+check('A41', 'book: unknown, injected or unapproved id answers 404', $r1['code'] === 404 && $r2['code'] === 404 && $r3['code'] === 404
+    && ($r1['json']['error'] ?? '') === 'That book is not in the catalogue.', "HTTP {$r1['code']}, {$r2['code']}, {$r3['code']} (pending book $pending)");
+
+$r = $v->req('api/book.php', ['action' => 'borrow', 'id' => '29', 'collection_date' => date('Y-m-d')]);
+$r2 = $v->req('api/book.php?id=29', null, 'DELETE');
+check('A42', 'book: visitor POST 401, other methods 405', $r['code'] === 401 && ($r['json']['error'] ?? '') === 'Please sign in again to borrow or save books.'
+    && $r2['code'] === 405 && preg_match('/^Allow:\s*GET, POST/mi', $r2['headers']) === 1, "POST {$r['code']}, DELETE {$r2['code']}");
+
+$ch = new Client('chloe');
+$ch->login('chloe@localhost', 'Member123!');
+$token = $ch->csrf();
+$chloeId = (int) db_value("SELECT id FROM users WHERE email = 'chloe@localhost'");
+$countLoans = fn() => (int) db_value('SELECT COUNT(*) FROM loans WHERE user_id = ?', [$chloeId]);
+$loansBefore = $countLoans();
+$r = $ch->req('api/book.php', ['action' => 'borrow', 'id' => '29', 'collection_date' => date('Y-m-d'), 'csrf' => 'wrong']);
+$r2 = $ch->req('api/book.php', ['action' => 'borrow', 'id' => '29', 'collection_date' => date('Y-m-d')]);
+check('A43', 'book: wrong or missing CSRF token 403, nothing borrowed', $r['code'] === 403 && $r2['code'] === 403
+    && str_starts_with($r['json']['error'] ?? '', 'Your session expired') && $countLoans() === $loansBefore,
+    "HTTP {$r['code']}, {$r2['code']}; loans $loansBefore -> " . $countLoans());
+
+$r = $ch->req('api/book.php', ['action' => 'steal', 'id' => '29', 'csrf' => $token]);
+$r2 = $ch->req('api/book.php', ['action' => 'borrow', 'id' => '29', 'collection_date' => date('Y-m-d', strtotime('+30 day')), 'csrf' => $token]);
+check('A44', 'book: unknown action 400; date outside the week 422', $r['code'] === 400 && ($r['json']['error'] ?? '') === 'Unknown action.'
+    && $r2['code'] === 422 && ($r2['json']['error'] ?? '') === 'Choose a collection date from today up to ' . COLLECT_AHEAD_DAYS . ' days ahead.',
+    "HTTP {$r['code']} \"" . ($r['json']['error'] ?? '') . "\"; HTTP {$r2['code']} \"" . ($r2['json']['error'] ?? '') . '"');
+
+clearstatcache();
+$mailBefore = (int) @filesize(STORAGE_PATH . '/mail.log');
+$r = $ch->req('api/book.php', ['action' => 'borrow', 'id' => '29', 'collection_date' => date('Y-m-d'), 'csrf' => $token]);
+$row = db_one("SELECT status, due_date FROM loans WHERE user_id = ? AND book_id = 29 AND status <> 'returned'", [$chloeId]);
+clearstatcache();
+check('A45', 'book: borrow saves the loan, sends the email, box shows the loan', $r['code'] === 200 && str_starts_with($r['json']['message'] ?? '', 'Borrowed. Collect The Hobbit')
+    && ($row['status'] ?? '') === 'active' && ($r['json']['loan']['state'] ?? '') === 'active' && ($r['json']['openLoans'] ?? 0) === 3
+    && (int) filesize(STORAGE_PATH . '/mail.log') > $mailBefore,
+    'HTTP ' . $r['code'] . ', loan ' . ($row['status'] ?? 'none') . ' due ' . ($row['due_date'] ?? '?') . ', openLoans ' . ($r['json']['openLoans'] ?? '?'));
+
+$r = $ch->req('api/book.php', ['action' => 'borrow', 'id' => '29', 'collection_date' => date('Y-m-d'), 'csrf' => $token]);
+check('A46', 'book: second copy of the same title refused in PHP\'s words', $r['code'] === 422
+    && ($r['json']['error'] ?? '') === 'You already have The Hobbit on loan. Return it before borrowing it again.' && ($r['json']['loan'] ?? null) !== null,
+    "HTTP {$r['code']} \"" . ($r['json']['error'] ?? '') . '"');
+
+// budy has overdue books and fees in the seed, so borrow_blocks() stops new loans.
+$r = $budy->req('api/book.php', ['action' => 'borrow', 'id' => '30', 'collection_date' => date('Y-m-d'), 'csrf' => $budy->csrf()]);
+check('A47', 'book: borrow blocks (overdue, fees) refused, reasons in the data', $r['code'] === 422 && str_contains($r['json']['error'] ?? '', 'overdue')
+    && count($r['json']['blocks'] ?? []) >= 1
+    && !db_value("SELECT 1 FROM loans l JOIN users u ON u.id = l.user_id WHERE u.email = 'budy@gmail.com' AND l.book_id = 30 AND l.status <> 'returned'"),
+    "HTTP {$r['code']} \"" . mb_strimwidth($r['json']['error'] ?? '', 0, 60, '...') . '"');
+
+$r = $ch->req('api/book.php', ['action' => 'queue', 'id' => '25', 'csrf' => $token]);
+$r2 = $ch->req('api/book.php', ['action' => 'queue', 'id' => '25', 'csrf' => $token]);
+$r3 = $ch->req('api/book.php', ['action' => 'leave', 'id' => '25', 'csrf' => $token]);
+$r4 = $ch->req('api/book.php', ['action' => 'queue', 'id' => '30', 'csrf' => $token]);
+check('A48', 'book: join queue, twice refused, leave; queue for a book on the shelf refused', $r['code'] === 200 && ($r['json']['queue']['position'] ?? 0) === 3
+    && $r2['code'] === 422 && ($r2['json']['error'] ?? '') === 'You are already in the queue for Project Hail Mary.'
+    && $r3['code'] === 200 && array_key_exists('queue', $r3['json'] ?? []) && $r3['json']['queue'] === null && $r4['code'] === 422,
+    'join #' . ($r['json']['queue']['position'] ?? '?') . ", again {$r2['code']}, leave {$r3['code']}, available book {$r4['code']}");
+
+$r = $ch->req('api/book.php', ['action' => 'save', 'id' => '38', 'csrf' => $token]);
+$saved = (bool) db_value('SELECT 1 FROM shelf WHERE user_id = ? AND book_id = 38', [$chloeId]);
+$r2 = $ch->req('api/book.php', ['action' => 'unsave', 'id' => '38', 'csrf' => $token]);
+$gone = !db_value('SELECT 1 FROM shelf WHERE user_id = ? AND book_id = 38', [$chloeId]);
+check('A49', 'book: shelf save and remove, same rows as process/shelf.php', $r['code'] === 200 && ($r['json']['onShelf'] ?? null) === true && $saved
+    && ($r2['json']['onShelf'] ?? null) === false && $gone,
+    'save: ' . var_export($r['json']['onShelf'] ?? null, true) . ", remove: " . var_export($r2['json']['onShelf'] ?? null, true));
+
+$r = $v->req('book.php?id=29');
+check('A50', 'Book page still prints the PHP box and loads the Vue file', $r['code'] === 200 && str_contains($r['body'], 'class="avail-box"')
+    && str_contains($r['body'], 'Sign in to borrow') && str_contains($r['body'], 'js/vue/borrow-box.js'), 'PHP box present; borrow-box.js included');
+
 // ---- Summary --------------------------------------------------------------------------------------
 $passed = count(array_filter($results, fn($x) => $x[2]));
 echo str_repeat('-', 100) . "\n$passed of " . count($results) . " api checks passed.\n";
