@@ -364,6 +364,41 @@ $r = $v->req('book.php?id=29');
 check('A50', 'Book page still prints the PHP box and loads the Vue file', $r['code'] === 200 && str_contains($r['body'], 'class="avail-box"')
     && str_contains($r['body'], 'Sign in to borrow') && str_contains($r['body'], 'js/vue/borrow-box.js'), 'PHP box present; borrow-box.js included');
 
+// ---- 5. api/serial.php (serial lookup on Add a book) ----------------------------------------------
+$r = $v->req('api/serial.php?serial=BNT-000129');
+$r2 = $ch->req('api/serial.php', ['serial' => 'BNT-000129', 'csrf' => $token]);
+check('A51', 'serial: visitor 401, POST 405 (members only, read only)', $r['code'] === 401 && ($r['json']['error'] ?? '') === 'Please sign in again to look up a serial number.'
+    && $r2['code'] === 405, "visitor {$r['code']}, POST {$r2['code']}");
+
+$r = $ch->req('api/serial.php?serial=bnt-000129');
+$pendingSerial = (string) db_value("SELECT serial_no FROM books WHERE status = 'pending' ORDER BY id LIMIT 1");
+$r2 = $ch->req('api/serial.php?serial=' . $pendingSerial);
+check('A52', 'serial: taken number shows the book; pending has no book link', $r['code'] === 200 && ($r['json']['free'] ?? true) === false
+    && ($r['json']['book']['title'] ?? '') === 'The Hobbit' && ($r['json']['serial'] ?? '') === 'BNT-000129' && str_ends_with($r['json']['book']['url'] ?? '', 'book.php?id=29')
+    && ($r2['json']['book']['status'] ?? '') === 'pending' && ($r2['json']['book']['url'] ?? 'x') === '',
+    ($r['json']['book']['title'] ?? '?') . ' (' . ($r['json']['book']['copies'] ?? '') . "); $pendingSerial: " . ($r2['json']['book']['statusLabel'] ?? '?'));
+
+$next = sprintf('BNT-%06d', (int) db_value("SELECT MAX(CAST(SUBSTRING(serial_no, 5) AS UNSIGNED)) FROM books") + 1);
+$r = $ch->req('api/serial.php?serial=BNT-000777');
+check('A53', 'serial: free number, same words as add-book.php, next number suggested', $r['code'] === 200 && ($r['json']['free'] ?? false) === true
+    && ($r['json']['message'] ?? '') === 'No book has the serial number BNT-000777. You can add it below.' && ($r['json']['suggested'] ?? '') === $next,
+    '"' . ($r['json']['message'] ?? '') . '", suggested ' . ($r['json']['suggested'] ?? '?'));
+
+$bad = [];
+foreach (['BNT-12', 'XYZ-000129', "' OR 1=1--", '<b>BNT</b>', ''] as $try) {
+    $bad[] = $ch->req('api/serial.php?serial=' . rawurlencode($try))['code'];
+}
+// Like add-book.php, input() keeps only the first 10 characters, so a longer injection is cut to a plain serial.
+$cut = $ch->req('api/serial.php?serial=' . rawurlencode("BNT-000129' OR '1'='1"));
+check('A54', 'serial: wrong format or injection 422; long input cut to 10 characters', $bad === [422, 422, 422, 422, 422]
+    && ($ch->req('api/serial.php?serial=BNT-12')['json']['error'] ?? '') === 'Serial numbers look like BNT-000123: the letters BNT, a hyphen and six digits.'
+    && $cut['code'] === 200 && ($cut['json']['serial'] ?? '') === 'BNT-000129',
+    'HTTP ' . implode(', ', $bad) . '; long injection read as ' . ($cut['json']['serial'] ?? '?'));
+
+$r = $ch->req('add-book.php');
+check('A55', 'Add a book still prints the PHP lookup form and loads the Vue file', $r['code'] === 200 && str_contains($r['body'], 'class="lookup-form"')
+    && str_contains($r['body'], 'id="ab-serial"') && str_contains($r['body'], 'js/vue/serial-lookup.js'), 'PHP lookup form present; serial-lookup.js included');
+
 // ---- Summary --------------------------------------------------------------------------------------
 $passed = count(array_filter($results, fn($x) => $x[2]));
 echo str_repeat('-', 100) . "\n$passed of " . count($results) . " api checks passed.\n";
