@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-11-03: Modern Enhancement with Vue 3, branch `modern-vue` (Viony)
+
+Vue 3 on top of the Base Version, by progressive enhancement. Full write-up in `docs/MODERN.md`.
+No new page, no change to `process/`, the rules or the 3-layer validation; `main` is untouched.
+
+- **Step 1:** live search on Browse (`<BookSearch>`, `api/books.php`).
+- **Step 2:** reactive loans panel on My Account (`<LoansPanel>`, `api/loans.php`).
+- **Step 3:** study room slot grid (`<RoomSlots>` + `<SlotCell>`, `api/rooms.php`).
+- **Step 4:** shared `useFetch()` composable.
+- **Step 5:** borrow, queue and shelf in place on the book page (`<BorrowBox>`, `api/book.php`).
+- **Step 6:** live serial lookup on Add a book (`<SerialLookup>`, `<SerialStatus>`, `useSerialCheck()`, `api/serial.php`).
+- **Step 7:** `<NoticeBox>` with slots; toasts with `<Teleport>` and a `reactive()` store.
+- Vue 3.4.38 is a local file (`assets/vendor/`), no CDN and no build step.
+- Tests: Base e2e **69 of 69**, `tools/api-test.php` **44 of 44**, `tools/vue-browser-test.mjs` **68 of 68**.
+
 ## 2026-10-28: Borrowing limits, renewals, reminders, settling fees, submission emails (Viony)
 
 Extends F5 Borrowing, F8 Add books and F9 Admin. No new feature number and no new page: the site
