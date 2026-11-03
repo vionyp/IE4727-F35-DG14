@@ -12,6 +12,7 @@
 //   instead of vanishing; v-for :key="l.id" lets Vue keep each row and animate only the one leaving.
 // - nextTick(): waits for Vue to update the page before moving keyboard focus.
 // - Composable: useFetch() (use-fetch.js) gives each request its own loading/error state.
+// - <toast-host> (toast.js, step 7) uses <Teleport> to show "Renewed ..." or "Returned ..." in the corner.
 // Server rules: Renew and Return POST to api/loans.php with the page's CSRF token. That endpoint calls
 // the same renew_loan()/return_loan() as process/loan.php, so PHP still decides everything. When PHP
 // says no (already renewed, overdue, expired session, signed out) its message is shown as it was sent.
@@ -33,6 +34,7 @@
     name: 'LoansPanel',
     props: { highlightId: { type: Number, default: 0 } },
     emits: ['ready', 'failed'],
+    components: window.BookNestVue && window.BookNestVue.components.ToastHost ? { ToastHost: window.BookNestVue.components.ToastHost } : {},
 
     setup: function (props, ctx) {
       var Vue = window.Vue;
@@ -90,6 +92,9 @@
             if (res.ok) {
               highlight.value = kind === 'renew' ? loan.id : 0;
               say('success', res.data.message);
+              if (api.toast) {
+                api.toast.show((kind === 'renew' ? 'Renewed ' : (loan.state === 'reserved' ? 'Cancelled the reservation for ' : 'Returned ')) + loan.title);
+              }
             } else {
               say('error', res.data.error || 'That did not work. Please reload the page.', res.status === 401 ? res.data.signin : '');
             }
@@ -153,7 +158,7 @@
         loans: loans, blocks: blocks, acting: action.loading, rules: rules, message: message, busyId: busyId, confirmId: confirmId,
         highlight: highlight, messageEl: messageEl, openCount: openCount, totalFee: totalFee, dueSoon: dueSoon,
         reminder: reminder, renew: renew, askReturn: askReturn, giveBack: giveBack, money: money, daysText: daysText,
-        findUrl: api.url('catalogue.php?sort=available')
+        findUrl: api.url('catalogue.php?sort=available'), hasToast: !!api.toast
       };
     },
 
@@ -200,6 +205,7 @@
       '  </transition-group>' +
       '  <p v-else class="notice">No books on loan. Borrow up to {{ rules.maxLoans }} books at a time, free for {{ rules.loanDays }} days, and renew each one' +
       '     {{ rules.maxRenewals === 1 ? \'once\' : rules.maxRenewals + \' times\' }}. <a :href="findUrl">See what is on the shelf</a></p>' +
+      '  <toast-host v-if="hasToast"></toast-host>' +
       '</div>'
   };
 

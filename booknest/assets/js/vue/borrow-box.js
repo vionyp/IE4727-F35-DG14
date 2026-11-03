@@ -14,25 +14,18 @@
 // - watch(): when the number of open loans changes, the header badge follows.
 // - nextTick(): moves keyboard focus to the date picker or the message after Vue has drawn it.
 // - Composable: useFetch() (use-fetch.js), one slot for loading the box and one for actions.
+// - Child components with slots: the notices are <notice-box> (notice-box.js). The text goes in its
+//   default slot and the "See your loans" link in its named slot "actions".
+// - <toast-host> (toast.js) uses <Teleport> to show a short "Borrowed ..." note in the screen corner.
 // Server rules: every button POSTs to api/book.php with the page's CSRF token, which calls the same
 // borrow_book(), join_queue() and leave_queue() as process/loan.php. PHP decides; this file shows
 // what PHP answered, word for word. With JavaScript off, book.php and borrow.php work as before.
 (function () {
   'use strict';
 
-  // The same icons that includes/views.php prints (aria-hidden, so screen readers skip them).
-  function svg(paths) {
-    return '<svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"' +
-      ' stroke-linejoin="round" aria-hidden="true" focusable="false">' + paths + '</svg>';
-  }
-  var ICON = {
-    books: svg('<path d="M4 4h4v16H4zM10 4h4v16h-4z"/><path d="m16 5 3.8-1 2.2 15.4-3.8 1z"/>'),
-    queue: svg('<circle cx="7" cy="7" r="2.5"/><circle cx="17" cy="7" r="2.5"/><path d="M2.5 19a4.5 4.5 0 0 1 9 0M12.5 19a4.5 4.5 0 0 1 9 0"/>'),
-    bookmark: svg('<path d="M6 3h12v18l-6-4-6 4z"/>'),
-    check: svg('<path d="m5 12 5 5 9-10"/>'),
-    lock: svg('<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>'),
-    book: svg('<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 21V5"/><path d="M8 7h7"/>')
-  };
+  // The site icons and child components, from notice-box.js and toast.js (loaded before this file).
+  var shared = window.BookNestVue || { icons: {}, components: {} };
+  var ICON = shared.icons || {};
 
   var BorrowBox = {
     name: 'BorrowBox',
@@ -42,6 +35,7 @@
       readText: { type: String, default: '' }
     },
     emits: ['ready', 'failed', 'changed'],
+    components: { NoticeBox: shared.components.NoticeBox, ToastHost: shared.components.ToastHost },
 
     setup: function (props, ctx) {
       var Vue = window.Vue;
@@ -96,6 +90,8 @@
             } else {
               say('success', d.message);
             }
+            var done = { borrow: 'Borrowed ', queue: 'Joined the queue for ', leave: 'Left the queue for ', save: 'Saved to your shelf: ', unsave: 'Removed from your shelf: ' };
+            if (api.toast) { api.toast.show(done[kind] + d.book.title); }
             ctx.emit('changed', { action: kind, message: d.message });
           } else {
             say('error', res.data.error || 'That did not work. Please reload the page.',
@@ -188,7 +184,7 @@
       '  </div>' +
       '  <form v-if="picking && canBorrow" class="panel form vb-picker" @submit.prevent="confirmBorrow" aria-labelledby="vb-picker-title">' +
       '    <h2 id="vb-picker-title" class="panel-title">{{ mode === \'offered\' ? \'Your copy is waiting\' : \'When will you collect it?\' }}</h2>' +
-      '    <p v-if="mode === \'offered\'" class="notice">' + ICON.check + ' We are holding a copy for you until {{ data.queue.holdUntilLong }}.</p>' +
+      '    <notice-box v-if="mode === \'offered\'" kind="ok" icon="check">We are holding a copy for you until {{ data.queue.holdUntilLong }}.</notice-box>' +
       '    <div class="field">' +
       '      <label for="vb-date">Collection date</label>' +
       '      <select id="vb-date" ref="dateEl" v-model="date" aria-describedby="vb-due">' +
@@ -202,14 +198,15 @@
       '      <button type="button" class="btn btn-ghost" @click="picking = false">Not now</button>' +
       '    </div>' +
       '  </form>' +
-      '  <div v-if="data.blocks.length" class="notice notice-alert" role="status">' + ICON.lock +
-      '    <p><strong>New loans are paused.</strong> {{ data.blocks.join(\' \') }} <a :href="data.links.loans">See your loans</a></p></div>' +
-      '  <p v-else-if="mode === \'waiting\'" class="notice">' + ICON.queue + ' We will email you as soon as a copy is yours, then hold it for' +
-      '    {{ data.rules.holdDays }} days. Meanwhile you can read the {{ data.book.sampleWord }}.</p>' +
-      '  <p v-else-if="mode === \'queue\'" class="notice">Every copy is out. Join the queue and we will email you when one comes back.' +
-      '    You can still read the {{ data.book.sampleWord }} now.</p>' +
-      '  <p v-else-if="data.book.stock <= 0" class="notice">We have no copies of this book yet. You can still read the {{ data.book.sampleWord }},' +
-      '    and save it to your shelf for later.</p>' +
+      '  <notice-box v-if="data.blocks.length" kind="alert" icon="lock"><strong>New loans are paused.</strong> {{ data.blocks.join(\' \') }}' +
+      '    <template #actions><a :href="data.links.loans">See your loans</a></template></notice-box>' +
+      '  <notice-box v-else-if="mode === \'waiting\'" icon="queue">We will email you as soon as a copy is yours, then hold it for' +
+      '    {{ data.rules.holdDays }} days. Meanwhile you can read the {{ data.book.sampleWord }}.</notice-box>' +
+      '  <notice-box v-else-if="mode === \'queue\'">Every copy is out. Join the queue and we will email you when one comes back.' +
+      '    You can still read the {{ data.book.sampleWord }} now.</notice-box>' +
+      '  <notice-box v-else-if="data.book.stock <= 0">We have no copies of this book yet. You can still read the {{ data.book.sampleWord }},' +
+      '    and save it to your shelf for later.</notice-box>' +
+      '  <toast-host></toast-host>' +
       '</div>'
   };
 

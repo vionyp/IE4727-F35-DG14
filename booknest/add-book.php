@@ -29,7 +29,7 @@ $thisYear = (int) date('Y');
 $page_title = 'Add a book';
 $page_desc = 'Look up a book by serial number, or add a new book to the BookNest library.';
 $body_class = 'page-addbook';
-$scripts = ['forms.js', 'vue/boot.js', 'vue/use-fetch.js', 'vue/serial-lookup.js'];
+$scripts = ['forms.js', 'vue/boot.js', 'vue/use-fetch.js', 'vue/notice-box.js', 'vue/serial-lookup.js'];
 $crumbs = [['Home', url()], ['My Account', url('account.php')], ['Add a book', null]];
 require __DIR__ . '/includes/header.php';
 ?>
