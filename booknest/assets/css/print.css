@@ -3,7 +3,7 @@
 
 * { background: #fff !important; color: #000 !important; box-shadow: none !important; text-shadow: none !important; }
 body { font: 11pt/1.5 Georgia, serif; padding-bottom: 0 !important; }
-.site-header, .site-nav, .site-search, .skip-link, .flash-close, .row-controls, .reader-controls, .reader-help,
+.site-header, .news-ticker, .site-nav, .site-search, .skip-link, .flash-close, .row-controls, .reader-controls, .reader-help,
 .billboard-bg, .date-picker, .legend, .book-actions, .booking-cancel, form button, .btn, .icon-btn,
 .site-footer .footer-grid section:nth-child(3), .tabbar { display: none !important; }
 a { text-decoration: underline; }
