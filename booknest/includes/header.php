@@ -15,6 +15,8 @@ $searchValue = is_page('catalogue.php') ? input($_GET, 'q', 100) : '';
 // The onboarding tour runs for members only; a new registration starts it once.
 $tourNew = $user && !empty($_SESSION['tour_new']);
 unset($_SESSION['tour_new']);
+// Scrolling "new arrivals" ticker under the header: the newest approved books.
+$tickerBooks = db_all("SELECT id, title, author FROM books WHERE status = 'approved' ORDER BY created_at DESC LIMIT 8");
 ?>
 <!doctype html>
 <html lang="en-SG" class="no-js">
@@ -89,6 +91,23 @@ unset($_SESSION['tour_new']);
     </div>
   </div>
 </header>
+<?php if ($tickerBooks): ?>
+<div class="news-ticker" role="region" aria-label="New arrivals">
+  <span class="ticker-label">New</span>
+  <div class="ticker-viewport">
+    <?php // The list is printed twice so the scroll can loop without a gap; the copy is hidden from screen readers. ?>
+    <div class="ticker-track">
+      <?php foreach ([false, true] as $isCopy): ?>
+      <ul class="ticker-list"<?= $isCopy ? ' aria-hidden="true"' : '' ?>>
+        <?php foreach ($tickerBooks as $tb): ?>
+        <li>Just added: <a href="<?= e(book_url((int) $tb['id'])) ?>"<?= $isCopy ? ' tabindex="-1"' : '' ?>><?= e($tb['title']) ?></a> by <?= e($tb['author']) ?></li>
+        <?php endforeach; ?>
+      </ul>
+      <?php endforeach; ?>
+    </div>
+  </div>
+</div>
+<?php endif; ?>
 <?= flash_render() ?>
 <main id="main" tabindex="-1">
 <?= $crumbs ? breadcrumbs($crumbs) : '' ?>
