@@ -48,7 +48,7 @@ My Account (1), Return (2), Yes, return it (3). If the book is late, the confirm
 fee ("It was 3 days late, so a late fee of S$1.50 was added to your account"), and the fee stops
 growing from that day.
 
-### Scenario 3: Book a study room (Aisha, member)
+### Scenario 3: Book a study room (Budy, member)
 
 ```mermaid
 flowchart LR

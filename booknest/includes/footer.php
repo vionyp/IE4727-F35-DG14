@@ -11,7 +11,7 @@ $status = library_status();
     </div>
     <section aria-labelledby="footer-visit">
       <h2 id="footer-visit">Visit us</h2>
-      <p class="status-pill <?= $status['open'] ? 'is-open' : 'is-closed' ?>"><span class="dot" aria-hidden="true"></span><?= e($status['label']) ?> <span class="status-detail">· <?= e($status['detail']) ?></span></p>
+      <p data-live="hours" class="status-pill <?= $status['open'] ? 'is-open' : 'is-closed' ?>"><span class="dot" aria-hidden="true"></span><?= e($status['label']) ?> <span class="status-detail">· <?= e($status['detail']) ?></span></p>
       <p><?= e(BRANCH_NAME) ?><br><?= e(BRANCH_ADDRESS) ?></p>
       <p>Open every day, <?= sprintf('%02d:00 to %02d:00', OPEN_HOUR, CLOSE_HOUR) ?>.<br>Study rooms follow the same hours.</p>
     </section>

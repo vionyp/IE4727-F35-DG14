@@ -98,7 +98,9 @@ function form_state(): array
     static $state = null;
     if ($state === null) {
         $state = $_SESSION['form'] ?? ['name' => '', 'old' => [], 'errors' => []];
-        unset($_SESSION['form']);
+        if (!is_live_refresh()) {   // a live update leaves the typed values for the real next page
+            unset($_SESSION['form']);
+        }
     }
     return $state;
 }

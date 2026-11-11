@@ -27,7 +27,6 @@ try {
     // Lock this member's row (daily cap) and the room's row (overlaps) until we commit.
     db_one('SELECT id FROM users WHERE id = ? FOR UPDATE', [$user['id']]);
     $room = db_one('SELECT id, name, is_active FROM study_rooms WHERE id = ? FOR UPDATE', [$roomId]);
-
     $problem = '';
     if (!$room) {
         $problem = 'That room does not exist.';
@@ -47,14 +46,12 @@ try {
                 . DAILY_CAP_MINUTES . ' minutes' . ($left ? ", so you can book $left more." : '.');
         }
     }
-
     if ($problem) {
         $db->rollback();
         keep_form('booking', $_POST, ['start' => $problem]);
         flash('error', $problem);
         redirect($back . '#book');
     }
-
     db_exec("INSERT INTO room_bookings (room_id, user_id, booking_date, start_time, end_time, purpose, status)
              VALUES (?, ?, ?, ?, ?, ?, 'confirmed')", [$roomId, $user['id'], $date, $start, $end, $purpose ?: null]);
     $bookingId = db_insert_id();
@@ -69,5 +66,8 @@ send_mail($user['email'], 'Study room booked: ' . $room['name'] . ', ' . short_d
         . "\n  Time: $start to $end\n  Booking number: $bookingId\n\nPlease arrive on time; rooms are released after 15 minutes."
         . "\nNeed to cancel? Go to My Account. Cancelling frees your hour for that day."));
 
+live_notify((int) $user['id'], 'me');
+live_notify('all', 'rooms');
+live_notify('admins', 'admin');
 flash('success', 'Booked. ' . $room['name'] . ', ' . long_date($date) . ', ' . $start . ' to ' . $end . '. A confirmation email is on its way.');
 redirect($back);

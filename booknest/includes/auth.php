@@ -22,7 +22,10 @@ function start_secure_session(): void
         session_regenerate_id(true);
         flash('info', 'You were signed out after 30 minutes without activity. Please sign in again.');
     }
-    $_SESSION['last_active'] = $now;
+    // A live update re-reading the page is not the member doing something, so it does not reset the clock.
+    if (!is_live_refresh()) {
+        $_SESSION['last_active'] = $now;
+    }
 }
 
 // Returns the signed in user row, or null for visitors.

@@ -41,16 +41,7 @@ switch ($action) {
 
     case 'return':
         [$problem, $loan] = return_loan($user, input_int($_POST, 'loan_id'));
-        if ($problem) {
-            flash('error', $problem);
-        } elseif ($loan['collection_date'] > date('Y-m-d')) {
-            flash('success', 'Your reservation for ' . $loan['title'] . ' is cancelled.');
-        } else {
-            $fee = loan_fee($loan);
-            flash('success', 'Returned ' . $loan['title'] . '. ' . ($fee > 0
-                ? 'It was ' . days_text(loan_days_late($loan)) . ' late, so a late fee of ' . money($fee) . ' was added to your account.'
-                : 'Thank you for bringing it back on time.'));
-        }
+        flash($problem ? 'error' : 'success', $problem ?: return_message($loan));
         redirect('account.php#loans');
 
     case 'renew':

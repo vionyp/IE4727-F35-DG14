@@ -55,7 +55,7 @@ require __DIR__ . '/includes/header.php';
       </form>
       <details class="demo-accounts">
         <summary>Demo accounts for testing</summary>
-        <p class="small">Member: <code>aisha@localhost</code> / <code>Member123!</code><br>Admin: <code>admin@localhost</code> / <code>Admin123!</code></p>
+        <p class="small">Member: <code>budy@localhost</code> / <code>Member123!</code><br>Admin: <code>admin@localhost</code> / <code>Admin123!</code></p>
       </details>
     </section>
 

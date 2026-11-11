@@ -20,3 +20,9 @@ desktop.ini
 
 # Course documents stay on your own computer, not in the repo
 *.pdf
+
+# Live update server packages (npm install inside booknest/live)
+booknest/live/node_modules/
+
+# Your own Gmail settings for PHPMailer (app password): never commit them
+booknest/config/mail.local.php

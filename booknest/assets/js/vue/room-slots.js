@@ -162,6 +162,12 @@
       // A new duration in the grid goes into the form too (the form is what gets sent).
       Vue.watch(duration, function () { fillForm(false); });
 
+      // Live updates (live.js): a librarian or another member changed something this screen shows,
+      // so it loads its data from api/ again.
+      function onLive() { if (started) { load(); } }
+      Vue.onMounted(function () { window.addEventListener('booknest:live', onLive); });
+      Vue.onBeforeUnmount(function () { window.removeEventListener('booknest:live', onLive); });
+
       // And a duration changed in the form comes back into the grid.
       Vue.onMounted(function () {
         var field = document.getElementById('bk-duration');

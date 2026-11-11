@@ -137,7 +137,7 @@ check('A08', 'Browse page still renders results in PHP and loads the Vue files',
 $loanOf = fn(string $title) => (int) db_value("SELECT l.id FROM loans l JOIN books b ON b.id = l.book_id
                                                WHERE l.user_id = 82 AND b.title = ? AND l.status <> 'returned'", [$title]);
 // Returns one loan row straight from the database.
-$loanRow = fn(int $id) => db_one('SELECT due_date, renewals, status FROM loans WHERE id = ?', [$id]);
+$loanRow = fn(int $id) => db_one('SELECT due_date, renewals, status, return_requested_at FROM loans WHERE id = ?', [$id]);
 // Extracts the flash message text from a page, as the Base pages print it.
 $flash = function (string $html): string {
     preg_match('/<div class="flash flash-\w+"[^>]*>.*?<p>(.*?)<\/p>/s', $html, $m);
@@ -190,13 +190,13 @@ $r = $budy->req('api/loans.php', ['action' => 'renew', 'loan_id' => (string) $go
 check('A17', 'loans: overdue loan cannot be renewed', $r['code'] === 422 && str_contains($r['json']['error'] ?? '', 'It is overdue, so it cannot be renewed'),
     "HTTP {$r['code']}: \"" . ($r['json']['error'] ?? '') . '"');
 
-$aisha = new Client('aisha');
-$aisha->login('aisha@localhost', 'Member123!');
-$at = $aisha->csrf();
+$budyLocal = new Client('budy-local');
+$budyLocal->login('budy@localhost', 'Member123!');
+$at = $budyLocal->csrf();
 $educated = $loanOf('Educated');
 $eBefore = $loanRow($educated);
-$r = $aisha->req('api/loans.php', ['action' => 'renew', 'loan_id' => (string) $educated, 'csrf' => $at]);
-$r2 = $aisha->req('api/loans.php', ['action' => 'return', 'loan_id' => (string) $educated, 'csrf' => $at]);
+$r = $budyLocal->req('api/loans.php', ['action' => 'renew', 'loan_id' => (string) $educated, 'csrf' => $at]);
+$r2 = $budyLocal->req('api/loans.php', ['action' => 'return', 'loan_id' => (string) $educated, 'csrf' => $at]);
 check('A18', 'loans: another member cannot renew or return your loan', $r['code'] === 422 && $r2['code'] === 422 && ($r['json']['error'] ?? '') === 'We could not find that loan.'
     && $loanRow($educated) == $eBefore, "renew {$r['code']} \"" . ($r['json']['error'] ?? '') . "\", return {$r2['code']} \"" . ($r2['json']['error'] ?? '') . '"; loan unchanged');
 
@@ -210,14 +210,17 @@ check('A20', 'loans: signed out POST gives 401 even with a valid token', $r['cod
 $atomic = $loanOf('Atomic Habits');
 $r = $budy->req('api/loans.php', ['action' => 'return', 'loan_id' => (string) $atomic, 'csrf' => $token]);
 $sixReason = array_filter($r['json']['blocks'] ?? [], fn($b) => str_contains($b, 'books on loan'));
-check('A21', 'loans: return works, list and block reasons are updated', $r['code'] === 200 && ($r['json']['message'] ?? '') === 'Returned Atomic Habits. Thank you for bringing it back on time.'
-    && count($r['json']['loans'] ?? []) === $dbOpen - 1 && !$sixReason && $loanRow($atomic)['status'] === 'returned',
-    '"' . ($r['json']['message'] ?? '') . '"; ' . count($r['json']['loans'] ?? []) . ' loans left; "6 books" reason gone: ' . ($sixReason ? 'no' : 'yes'));
+$handedIn = array_column($r['json']['handedIn'] ?? [], 'id');
+check('A21', 'loans: hand in works, the book moves to "handed in" and block reasons update', $r['code'] === 200
+    && ($r['json']['message'] ?? '') === 'Handed in Atomic Habits. A librarian will check it and confirm the return. Thank you for bringing it back on time.'
+    && count($r['json']['loans'] ?? []) === $dbOpen - 1 && in_array($atomic, $handedIn, true) && !$sixReason
+    && $loanRow($atomic)['status'] !== 'returned' && $loanRow($atomic)['return_requested_at'] !== null,
+    '"' . ($r['json']['message'] ?? '') . '"; ' . count($r['json']['loans'] ?? []) . ' loans left, 1 waiting for a librarian; "6 books" reason gone: ' . ($sixReason ? 'no' : 'yes'));
 
-// The same action through the Base form must give the same words (here: returning Educated on time).
+// The same action through the Base form must give the same words (here: handing in Educated on time).
 $budy->req('process/loan.php', ['action' => 'return', 'loan_id' => (string) $educated, 'csrf' => $token]);
 $baseMsg = $flash($budy->req('account.php')['body']);
-check('A22', 'loans: API message matches the Base flash message', $baseMsg === 'Returned Educated. Thank you for bringing it back on time.'
+check('A22', 'loans: API message matches the Base flash message', $baseMsg === 'Handed in Educated. A librarian will check it and confirm the return. Thank you for bringing it back on time.'
     && str_replace('Atomic Habits', 'Educated', $r['json']['message'] ?? '') === $baseMsg, "Base: \"$baseMsg\"");
 
 $r = $budy->req('account.php');

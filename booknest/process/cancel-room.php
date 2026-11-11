@@ -24,6 +24,9 @@ send_mail($user['email'], 'Study room booking cancelled',
     mail_body(first_name($user), "Your booking has been cancelled.\n\n  Room: {$booking['name']}\n  Date: " . long_date($booking['booking_date'])
         . "\n  Time: " . hm($booking['start_time']) . ' to ' . hm($booking['end_time']) . "\n\nYour study hour for that day is free again."));
 
+live_notify((int) $user['id'], 'me');
+live_notify('all', 'rooms');
+live_notify('admins', 'admin');
 flash('success', 'Cancelled ' . $booking['name'] . ' on ' . short_date($booking['booking_date']) . ' at ' . hm($booking['start_time'])
     . '. Your hour for that day is free again.');
 redirect('account.php#bookings');

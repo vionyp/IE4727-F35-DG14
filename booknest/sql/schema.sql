@@ -66,8 +66,10 @@ CREATE TABLE loans (
   book_id         INT UNSIGNED NOT NULL,
   collection_date DATE NOT NULL,
   due_date        DATE NOT NULL,
+  collected_at    DATETIME NULL,      -- a librarian handed the book over at the desk (desk check with the member's QR code)
   returned_date   DATE NULL,
-  status          ENUM('reserved','active','overdue','returned') NOT NULL DEFAULT 'reserved',
+  return_requested_at DATETIME NULL,  -- the member handed the book in; a librarian still has to confirm it
+  status         ENUM('reserved','active','overdue','returned') NOT NULL DEFAULT 'reserved',
   renewals        TINYINT UNSIGNED NOT NULL DEFAULT 0,
   fee_cleared_at  DATETIME NULL,
   created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -77,6 +79,18 @@ CREATE TABLE loans (
   KEY ix_loans_created (created_at),
   CONSTRAINT fk_loans_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   CONSTRAINT fk_loans_book FOREIGN KEY (book_id) REFERENCES books(id)
+) ENGINE=InnoDB;
+
+-- Reminder emails already sent, so each one goes out once (includes/reminders.php).
+-- due_date is the due date the reminder was about: after a renewal the new date is reminded again.
+CREATE TABLE loan_reminders (
+  id        INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  loan_id   INT UNSIGNED NOT NULL,
+  kind      ENUM('collect','due_soon','due_today','overdue') NOT NULL,
+  due_date  DATE NOT NULL,
+  sent_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY ix_reminders_loan (loan_id, kind, due_date),
+  CONSTRAINT fk_reminders_loan FOREIGN KEY (loan_id) REFERENCES loans(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 -- Queue for books with no copy on the shelf. "offered" means a copy is held for that member.

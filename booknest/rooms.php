@@ -82,6 +82,7 @@ $link = fn(array $change = [], string $hash = '') => url('rooms.php?'
 $page_title = 'Study Rooms';
 $page_desc = 'See which study rooms are free and book one for up to an hour a day.';
 $body_class = 'page-rooms';
+$live_topics = ['rooms'];   // live updates: anyone's booking or a room opened or closed
 $scripts = ['forms.js', 'rooms.js', 'vue/boot.js', 'vue/use-fetch.js', 'vue/slot-cell.js', 'vue/room-slots.js'];
 require __DIR__ . '/includes/header.php';
 ?>
@@ -119,7 +120,7 @@ require __DIR__ . '/includes/header.php';
   </nav>
 
   <section class="moon" aria-labelledby="map-title">
-    <div class="moon-map">
+    <div class="moon-map" data-live="map">
       <svg viewBox="0 0 660 620" role="group" aria-labelledby="map-title map-desc">
         <desc id="map-desc">Plan of the library, a crescent shaped building. <?= count($rooms) ?> study rooms sit on four arcs around a garden. Free rooms are links.</desc>
         <defs>
@@ -228,7 +229,7 @@ require __DIR__ . '/includes/header.php';
     <?php foreach ($labels as $key => $label): ?>
     <span class="legend-item"><span class="slot slot-<?= $key ?>"><?= $symbols[$key] ?></span> <?= e($label) ?></span>
     <?php endforeach; ?>
-    <span class="legend-count"><?= $arcFree ?> free slots in <?= e($arc) ?> on <?= e(short_date($date)) ?></span>
+    <span class="legend-count" data-live="free-count"><?= $arcFree ?> free slots in <?= e($arc) ?> on <?= e(short_date($date)) ?></span>
   </div>
 
   <div class="table-wrap availability-wrap" tabindex="0" role="region" aria-labelledby="avail-caption">
@@ -242,7 +243,7 @@ require __DIR__ . '/includes/header.php';
           <?php endforeach; ?>
         </tr>
       </thead>
-      <tbody>
+      <tbody data-live="slots">
         <?php foreach ($tableRooms as $room): ?>
         <tr>
           <th scope="row" class="room-col"><span class="room-name"><?= e($room['name']) ?></span><span class="room-cap"><?= (int) $room['capacity'] ?> seats</span></th>

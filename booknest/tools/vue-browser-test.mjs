@@ -1,6 +1,7 @@
 // Modern Enhancement: browser tests for the Vue screens, run in headless Microsoft Edge.
 //   node tools/vue-browser-test.mjs            (all groups)
-//   node tools/vue-browser-test.mjs search     (one group: search, loans, rooms, composable, borrow, lookup, toast)
+//   node tools/vue-browser-test.mjs search     (one group: search, loans, rooms, composable, borrow, lookup, toast, live, tour)
+// The live group needs the live server running (cd live, then npm start).
 // Needs Node 22+ (built-in fetch and WebSocket), Edge, Apache and MySQL with the seed data.
 // It drives the real pages through the Chrome DevTools Protocol: types with real key events,
 // counts requests to api/, blocks the Vue file or an endpoint to test the fallbacks, turns
@@ -45,6 +46,7 @@ class Tab {
     cdp.on('Runtime.consoleAPICalled', (p) => { if (p.type === 'error') this.errors.push(p.args.map((a) => a.value ?? a.description).join(' ')); });
     cdp.on('Log.entryAdded', (p) => {
       if (p.entry.level !== 'error' || /ERR_BLOCKED_BY_CLIENT/.test(p.entry.text)) return;   // blocked on purpose
+      if (/:3000\/events/.test(p.entry.url || p.entry.text)) return;   // the optional live server is not running (tested in the live group)
       // "Failed to load resource: 422" is Chrome reporting an HTTP refusal, not a script error; keep it apart.
       (p.entry.source === 'network' ? this.refusals : this.errors).push(p.entry.text + ' ' + (p.entry.url || ''));
     });
@@ -261,9 +263,9 @@ async function searchTests(browser) {
 
 // ---- 2. My Loans panel on My Account --------------------------------------------------------------
 // Returns a JS expression for budy's loan row with this title in the Vue panel.
-const row = (title) => `[...document.querySelectorAll('.vl .loan-item')].find(li => li.querySelector('h3 a').textContent === ${JSON.stringify(title)})`;
+const row = (title) => `[...document.querySelectorAll('.vl .loan-list:not(.vl-handed-in) > .loan-item')].find(li => li.querySelector('h3 a').textContent === ${JSON.stringify(title)})`;
 // Reads the three totals, the header badge and the "Books on loan" tile.
-const totals = `({ items: document.querySelectorAll('.vl .loan-item').length,
+const totals = `({ items: document.querySelectorAll('.vl .loan-list:not(.vl-handed-in) > .loan-item').length,
   summary: [...document.querySelectorAll('.vl-summary li')].map(li => li.textContent.trim().replace(/\\s+/g, ' ')),
   badge: document.querySelector('.loans-link .badge').textContent,
   tile: [...document.querySelectorAll('.tile')].find(t => t.querySelector('.tile-label').textContent === 'Books on loan').querySelector('.tile-value').textContent,
@@ -271,10 +273,11 @@ const totals = `({ items: document.querySelectorAll('.vl .loan-item').length,
   blocks: document.querySelector('.vl .notice-alert')?.textContent || '' })`;
 
 async function loansTests(browser) {
-  // A second tab, signed in as the same member, opened first so that it goes stale.
+  // A second tab, signed in as the same member, opened first so that it goes stale. Live updates are
+  // blocked in it, otherwise the live server would refresh it (that is tested in the live group).
   const stale = await Tab.open(browser);
   await stale.login('budy@gmail.com', 'budy123!');
-  await stale.go('account.php');
+  await stale.go('account.php', { block: ['*:3000/*'] });
   await stale.waitFor('!!document.querySelector(".vl .loan-item")', 8000);
 
   const t = await Tab.open(browser);
@@ -309,9 +312,10 @@ async function loansTests(browser) {
   s = await t.eval(totals);
   const same = await t.eval('window.__samePage');
   const msg = await t.eval(`document.querySelector('.vl-message').textContent.trim()`);
-  check('C03', 'Loans: Return asks first, row leaves with <transition-group>', yesFocused && leaving && same === 'yes' && s.items === 5
-    && msg === 'Returned Atomic Habits. Thank you for bringing it back on time.',
-    `confirm focused: ${yesFocused}, leave transition seen: ${leaving}, rows now ${s.items}, "${msg}"`);
+  const handed = await t.eval(`[...document.querySelectorAll('.vl-handed-in .loan-item h3 a')].some(a => a.textContent === 'Atomic Habits')`);
+  check('C03', 'Loans: Return asks first, row leaves with <transition-group> and waits for a librarian', yesFocused && leaving && same === 'yes' && s.items === 5
+    && msg === 'Handed in Atomic Habits. A librarian will check it and confirm the return. Thank you for bringing it back on time.' && handed,
+    `confirm focused: ${yesFocused}, leave transition seen: ${leaving}, rows now ${s.items}, under Handed in: ${handed}, "${msg}"`);
   check('C04', 'Loans: totals, header badge, tiles and pause reasons follow', s.summary[0] === '5 of 6 loans' && s.badge === '5' && s.tile === '5'
     && s.feeTile === 'S$8.50' && !s.blocks.includes('books on loan'),
     `${s.summary.join(' | ')}; badge ${s.badge}, tile ${s.tile}, fee tile ${s.feeTile}; "6 books" reason gone: ${!s.blocks.includes('books on loan')}`);
@@ -391,10 +395,10 @@ async function roomsTests(browser) {
   await v.close();
 
   const t = await Tab.open(browser);
-  await t.login('aisha@localhost', 'Member123!');
+  await t.login('budy@localhost', 'Member123!');
   await t.go('rooms.php');
   await t.waitFor('document.querySelectorAll(".vr-grid li").length === 22', 8000);
-  // Pick a day (not today) where aisha has nothing booked, asking the same api the grid uses.
+  // Pick a day (not today) where budy has nothing booked, asking the same api the grid uses.
   const day = await t.eval(`(async () => { for (const opt of [...document.querySelectorAll('#vr-date option')].slice(1)) {
       const r = await fetch('/booknest/api/rooms.php?date=' + opt.value, { credentials: 'same-origin' }).then(x => x.json());
       if (r.minutesUsed === 0) return opt.value; } return ''; })()`);
@@ -458,7 +462,7 @@ async function roomsTests(browser) {
   await off.close();
 
   const noVue = await Tab.open(browser);
-  await noVue.login('aisha@localhost', 'Member123!');
+  await noVue.login('budy@localhost', 'Member123!');
   await noVue.go('rooms.php', { block: ['*vue.global.prod.js*'] });
   await sleep(600);
   await noVue.clickEl(`document.querySelector('[data-availability] a.slot-free')`);
@@ -576,7 +580,7 @@ async function borrowTests(browser) {
   // A second tab with the same member, still showing Borrow, after the first tab borrowed: PHP refuses.
   const stale = await Tab.open(browser);
   await stale.login('chloe@localhost', 'Member123!');
-  await stale.go('book.php?id=31');   // Sapiens
+  await stale.go('book.php?id=31', { block: ['*:3000/*'] });   // Sapiens, live updates blocked so the tab stays stale
   await stale.waitFor('!!document.querySelector(".vb .book-actions")', 8000);
   await t.go('book.php?id=31');
   await t.waitFor('!!document.querySelector(".vb .book-actions")', 8000);
@@ -628,7 +632,7 @@ async function borrowTests(browser) {
   await nojs.close();
 
   const nv = await Tab.open(browser);
-  await nv.login('aisha@localhost', 'Member123!');
+  await nv.login('budy@localhost', 'Member123!');
   await nv.go('book.php?id=38', { block: ['*vue.global.prod.js*'] });
   await sleep(600);
   const before = await nv.eval(`({ vb: !!document.querySelector('.vb'), base: !document.querySelector('.book-actions').hidden })`);
@@ -648,7 +652,7 @@ const LOOKUP = `({ vsl: !!document.querySelector('.vsl'), box: document.getEleme
 
 async function lookupTests(browser) {
   const t = await Tab.open(browser);
-  await t.login('aisha@localhost', 'Member123!');
+  await t.login('budy@localhost', 'Member123!');
   await t.go('add-book.php');
   const mounted = await t.waitFor('!!document.querySelector(".vsl") && /is free to use/.test(document.getElementById("ab-serial-status")?.textContent || "")', 8000);
   await t.eval('window.__same = "yes"');
@@ -716,7 +720,7 @@ async function lookupTests(browser) {
   await t.close();
 
   const a = await Tab.open(browser);
-  await a.login('aisha@localhost', 'Member123!');
+  await a.login('budy@localhost', 'Member123!');
   await a.go('add-book.php?serial=bnt-000129');
   await a.waitFor(`document.querySelector('.vsl .serial-panel h3')?.textContent === 'The Hobbit'`, 6000);
   const fromUrl = await a.eval(LOOKUP);
@@ -758,12 +762,12 @@ async function toastTests(browser) {
   await t.go('account.php');
   await t.waitFor('!!document.querySelector(".vl .loan-item")', 8000);
   const title = 'Fourth Wing';
-  const row = `[...document.querySelectorAll('.vl .loan-item')].find(li => li.querySelector('h3 a').textContent === '${title}')`;
+  const row = `[...document.querySelectorAll('.vl .loan-list:not(.vl-handed-in) > .loan-item')].find(li => li.querySelector('h3 a').textContent === '${title}')`;
   await t.clickEl(`[...${row}.querySelectorAll('button')].find(b => b.textContent.trim() === 'Return')`);
   await t.clickEl(`${row}.querySelector('[id^="vl-yes-"]')`);
   await t.waitFor(`!!document.querySelector('.vt-item')`, 6000);
   const ret = await t.eval(TOASTS);
-  check('H03', 'Toast: the loans panel shares the same store (Returned ...)', ret.length === 1 && ret[0].text === 'Returned Fourth Wing' && ret[0].inBody, JSON.stringify(ret[0] || {}));
+  check('H03', 'Toast: the loans panel shares the same store (Handed in ...)', ret.length === 1 && ret[0].text === 'Handed in Fourth Wing' && ret[0].inBody, JSON.stringify(ret[0] || {}));
   check('H04', 'Toast: no JavaScript errors', t.errors.length === 0, t.errors.join(' | ') || 'none');
   await t.close();
 
@@ -785,7 +789,104 @@ async function toastTests(browser) {
   await b.close();
 }
 
-const groups = { search: searchTests, loans: loansTests, rooms: roomsTests, composable: composableTests, borrow: borrowTests, lookup: lookupTests, toast: toastTests };
+// Live updates (Node.js + Express server in live/, assets/js/live.js): one member and one librarian in
+// two tabs. Neither tab reloads; each one changes because the other did something.
+async function liveTests(browser) {
+  let up = false;
+  try { up = (await (await fetch('http://localhost:3000/')).json()).name === 'BookNest live server'; } catch { /* not running */ }
+  if (!up) { check('L00', 'Live: the live server is running (cd live, then npm start)', false, 'not running on port 3000'); return; }
+  const title = 'The Silent Patient';
+  const member = await Tab.open(browser);
+  await member.login('budy@localhost', 'Member123!');
+  await member.go('account.php');
+  await member.waitFor('!!document.querySelector(".vl .loan-item")', 8000);
+  const staff = await Tab.open(browser);
+  await staff.login('admin@localhost', 'Admin123!');
+  await staff.go('admin.php');
+  await member.eval('window.__samePage = "yes"');
+  await staff.eval('window.__samePage = "yes"');
+  await sleep(800);   // both pages connect to the live server
+
+  const row = `[...document.querySelectorAll('.vl .loan-list:not(.vl-handed-in) > .loan-item')].find(li => li.querySelector('h3 a').textContent === '${title}')`;
+  await member.clickEl(`[...${row}.querySelectorAll('button')].find(b => b.textContent.trim() === 'Return')`);
+  await member.clickEl(`${row}.querySelector('[id^="vl-yes-"]')`);
+  const listed = await staff.waitFor(`[...document.querySelectorAll('#returns tbody tr')].some(tr => tr.textContent.includes('${title}'))`, 6000);
+  const st = await staff.eval(`({ note: document.querySelector('.live-note')?.textContent || '', same: window.__samePage,
+    tile: document.querySelector('[data-live="tiles"] a[href="#returns"]')?.textContent || '' })`);
+  check('L01', 'Live: the admin page lists a hand-in without reloading', listed && st.same === 'yes' && st.note.includes(`handed in ${title}`) && st.tile.includes('to check'),
+    `listed: ${listed}, same page: ${st.same}, notice: "${st.note.replace('\u00d7', '')}", tile: "${st.tile}"`);
+
+  const feeBefore = await member.eval(`document.querySelectorAll('.tiles .tile-value')[1].textContent`);
+  await staff.clickEl(`[...document.querySelectorAll('#returns button[value="confirm_return"]')].find(b => b.getAttribute('aria-label').startsWith('Confirm ${title}'))`);
+  const confirmed = await member.waitFor(`(document.querySelector('.live-note:last-child')?.textContent || '').includes('confirmed ${title} is back')`, 6000);
+  const out = await member.waitFor(`![...document.querySelectorAll('.vl-handed-in .loan-item')].some(li => li.textContent.includes('${title}'))
+    && [...document.querySelectorAll('[data-live="history"] tbody th')].some(th => th.textContent === '${title}')`, 4000);
+  const same1 = await member.eval('window.__samePage');
+  check('L02', 'Live: the member sees the confirmation, the book moves to recent returns', confirmed && out && same1 === 'yes',
+    `notice: ${confirmed}, left "Handed in" and in history: ${out}, same page: ${same1}`);
+
+  await staff.waitFor(`!!document.querySelector('#fees button[value="paid"]')`, 6000);
+  await staff.clickEl(`[...document.querySelectorAll('#fees button[value="paid"]')].find(b => b.getAttribute('aria-label').endsWith('for ${title}'))`);
+  const paid = await member.waitFor(`(document.querySelector('.live-note:last-child')?.textContent || '').includes('for ${title} is marked as paid')`, 6000);
+  // The tile follows the Vue panel's reload; the history table follows live.js re-reading the page.
+  await member.waitFor(`document.querySelectorAll('.tiles .tile-value')[1].textContent !== ${JSON.stringify(feeBefore)}
+    && !![...document.querySelectorAll('[data-live="history"] tbody tr')].find(tr => tr.querySelector('th').textContent === '${title}')?.textContent.includes('paid')`, 5000);
+  const feeAfter = await member.eval(`document.querySelectorAll('.tiles .tile-value')[1].textContent`);
+  const paidRow = await member.eval(`[...document.querySelectorAll('[data-live="history"] tbody tr')].find(tr => tr.querySelector('th').textContent === '${title}')?.textContent.includes('paid')`);
+  check('L03', 'Live: Mark paid on the admin page updates the member\'s fees at once', paid && feeAfter !== feeBefore && paidRow && await member.eval('window.__samePage') === 'yes',
+    `notice: ${paid}, fee tile ${feeBefore} -> ${feeAfter}, history says paid: ${paidRow}`);
+  check('L04', 'Live: no JavaScript errors (both tabs)', member.errors.length === 0 && staff.errors.length === 0, [...member.errors, ...staff.errors].join(' | ') || 'none');
+  await member.close();
+  await staff.close();
+}
+
+// Onboarding tour (assets/js/tour.js) from start to end, with Vue and with the Vue file blocked. Vue
+// replaces the book list and the Borrow box after the page loads; the tour must follow the new elements.
+async function tourTests(browser) {
+  const UNDER_RING = `(() => { const r = document.querySelector('.tour-ring').getBoundingClientRect();
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return hit && hit.closest('a, button'); })()`;
+  const STEP = `document.querySelector('.tour-count')?.textContent || ''`;
+  const NEXT = `[...document.querySelectorAll('.tour-pop .btn-primary')].find(b => !b.hidden)`;
+  for (const [id, label, block] of [['K01', 'with Vue', []], ['K02', 'Vue file blocked', ['*vue.global.prod.js']]]) {
+    const t = await Tab.open(browser);
+    await t.login('chloe@localhost', 'Member123!');
+    const go = (path) => t.go(path, { block });
+    await go('account.php');
+    const loansBefore = await t.eval(`document.querySelector('.loans-link .badge')?.textContent`);
+    await t.clickEl(`document.querySelector('[data-tour-replay]')`);
+    await t.waitFor(`!!document.querySelector('.tour-pop')`, 3000);
+    const seen = [];
+    let stuck = '';
+    const step = async (want, action) => {
+      const ok = await t.waitFor(`(${STEP}).startsWith(${JSON.stringify(want)}) || document.querySelector('.tour-title')?.textContent === ${JSON.stringify(want)}`, 8000);
+      if (!ok) { stuck = stuck || `waiting for "${want}", saw "${await t.eval(STEP)}" / "${await t.eval(`document.querySelector('.tour-title')?.textContent`)}" on ${await t.eval('location.pathname')}`; return false; }
+      seen.push(want);
+      await sleep(700);   // Vue swaps the page in and the ring glides to its target
+      try { await action(); } catch (e) { stuck = stuck || `${want}: ${e.message.slice(0, 80)}`; return false; }
+      return true;
+    };
+    const clickNext = () => t.clickEl(NEXT);
+    const clickRing = async () => { await t.clickEl(UNDER_RING); await sleep(1200); await t.waitFor('document.readyState === "complete"', 8000); };
+    (await step('Welcome to BookNest', clickNext))
+      && (await step('Step 1 ', clickRing))
+      && (await step('Step 2 ', clickRing))
+      && (await step('Step 3 ', clickNext))
+      && (await step('Step 4 ', clickRing))
+      && (await step('Step 5 ', clickNext))
+      && (await step('Step 6 ', clickNext))
+      && (await step('Step 7 ', clickRing))
+      && (await step('Step 8 ', clickNext))
+      && (await step('Step 9 ', clickNext))
+      && (await step('You are all set', clickNext));
+    const gone = await t.waitFor(`!document.querySelector('.tour-pop')`, 3000);
+    const loansAfter = await t.eval(`document.querySelector('.loans-link .badge')?.textContent`);
+    check(id, `Tour: every step can be completed (${label}), nothing is borrowed`, !stuck && gone && loansAfter === loansBefore && t.errors.length === 0,
+      stuck || `${seen.length} steps done, tour closed: ${gone}, loans ${loansBefore} -> ${loansAfter}, JS errors: ${t.errors.length}`);
+    await t.close();
+  }
+}
+
+const groups = { search: searchTests, loans: loansTests, rooms: roomsTests, composable: composableTests, borrow: borrowTests, lookup: lookupTests, toast: toastTests, live: liveTests, tour: tourTests };
 
 // Starts Edge, runs the chosen groups, prints a summary and exits with 0 only if all passed.
 async function main() {

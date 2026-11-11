@@ -10,6 +10,9 @@ function flash(string $type, string $message): void
 // Prints and clears all queued messages.
 function flash_render(): string
 {
+    if (is_live_refresh()) {
+        return '';   // a live update must not use up a message meant for the next page the member opens
+    }
     $items = $_SESSION['flash'] ?? [];
     unset($_SESSION['flash']);
     if (!$items) {

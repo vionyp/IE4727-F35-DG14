@@ -7,7 +7,7 @@ JavaScript, PHP and MySQL only.
 
 **Run it:** see [`docs/SETUP.md`](docs/SETUP.md). Short version: start Apache and MySQL in XAMPP,
 import `sql/schema.sql` then `sql/seed.sql`, open `http://localhost/booknest/`, sign in as
-`aisha@localhost` / `Member123!` or `admin@localhost` / `Admin123!`.
+`budy@localhost` / `Member123!` or `admin@localhost` / `Admin123!`.
 
 | Document | Contents |
 |---|---|

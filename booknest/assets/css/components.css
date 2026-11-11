@@ -736,3 +736,42 @@ body { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
   from { transform: translateX(0); }
   to { transform: translateX(-50%); }
 }
+
+/* Live updates (assets/js/live.js) ------------------------------------------------------------ */
+/* The wrapper around a group of elements that is swapped as one piece. It adds no box of its own,
+   so the page lays out exactly as without it. */
+.live-region:not([hidden]) { display: contents; }
+/* A part that was just updated glows for a moment. */
+.live-changed { animation: live-glow 1.6s var(--ease, ease-out); }
+@keyframes live-glow {
+  from { box-shadow: 0 0 0 3px rgba(var(--glow-teal), .55); }
+  to { box-shadow: 0 0 0 3px rgba(var(--glow-teal), 0); }
+}
+/* Notices from the library, bottom left (Vue toasts use the bottom right). */
+.live-notes { position: fixed; left: var(--s4); bottom: calc(var(--s4) + var(--tabbar-h, 0px)); z-index: 60; display: grid; gap: var(--s2);
+  width: min(24rem, calc(100vw - 2 * var(--s4))); pointer-events: none; }
+.live-note { pointer-events: auto; display: flex; gap: var(--s3); align-items: start; margin: 0; padding: var(--s3) var(--s4);
+  border-radius: var(--radius); border: 1px solid rgba(var(--glow-amber), .5); border-left: 4px solid var(--accent);
+  background: var(--elevated, #1d222b); color: var(--text); box-shadow: var(--shadow); font-weight: 550; }
+.live-note-close { margin-left: auto; padding: 0 var(--s1); border: 0; background: none; color: var(--muted, inherit); font-size: 1.25rem; line-height: 1; cursor: pointer; }
+@media (max-width: 1023.98px) { .live-notes { --tabbar-h: 4.5rem; } }
+@media (prefers-reduced-motion: reduce) { .live-changed { animation: none; } }
+
+/* Desk codes and QR codes (includes/desk.php) ----------------------------------------------- */
+.desk-code { margin-top: var(--s2); }
+.desk-code summary { display: inline-flex; align-items: center; gap: var(--s1); cursor: pointer; list-style: none;
+  padding: .35rem .75rem; border: 1px solid rgba(var(--glow-amber), .55); border-radius: 999px; color: var(--accent); font-size: .875rem; font-weight: 600; }
+.desk-code summary::-webkit-details-marker { display: none; }
+.desk-code summary:hover { background: rgba(var(--glow-amber), .12); }
+.desk-code[open] summary { background: rgba(var(--glow-amber), .18); }
+.desk-code-body { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s3); margin-top: var(--s2); }
+.desk-code-body p { margin: 0; max-width: 22rem; }
+.desk-code .qr { display: block; width: 240px; height: 240px; max-width: 100%; border-radius: 6px; }
+.desk-code-text { font-family: ui-monospace, Consolas, monospace; font-size: 1.15rem; letter-spacing: .06em; }
+.desk-form .input { max-width: 16rem; font-family: ui-monospace, Consolas, monospace; text-transform: uppercase; }
+.desk-result { margin-top: var(--s3); }
+.desk-result h3 { margin: 0 0 var(--s1); }
+.reminder-list { margin-top: var(--s2); }
+.reminder-list summary { cursor: pointer; color: var(--muted); }
+.reminder-list ul { margin: var(--s2) 0 0; padding-left: var(--s4); }
+@media print { .desk-code .qr { width: 120px; height: 120px; } }

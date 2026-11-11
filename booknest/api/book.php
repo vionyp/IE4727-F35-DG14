@@ -40,7 +40,7 @@ function book_payload(int $bookId): array
             'availability' => ['text' => $text, 'class' => $class, 'note' => $note]],
         'signedIn' => (bool) $user,
         'onShelf' => $uid && (bool) db_value('SELECT 1 FROM shelf WHERE user_id = ? AND book_id = ?', [$uid, $bookId]),
-        'openLoans' => count(my_loans()),
+        'openLoans' => my_loans_out_count(),
         'loan' => $loan ? ['id' => (int) $loan['id'], 'state' => loan_state($loan), 'collectLong' => long_date($loan['collection_date']),
             'dueLong' => long_date($loan['due_date']), 'url' => url('account.php?loan=' . (int) $loan['id'] . '#loans')] : null,
         'queue' => $entry ? ['status' => $entry['status'], 'position' => (int) $entry['position'],

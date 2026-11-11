@@ -84,7 +84,7 @@ Each requirement is measurable and has at least one test in `TEST_LOG.md`.
 
 ## B. Functional requirements
 
-Mapped to features F1 to F10 of the project brief.
+Mapped to features F1 to F10 of the project brief, plus F11 and F12 added with the Modern Enhancement.
 
 ### F1 Browsing (home)
 
@@ -136,7 +136,7 @@ an online library (see `CHANGELOG.md`). Constants live in `config/config.php`.
 | FR-21 | No price is shown to members anywhere. Every book shows live availability instead: "Available to borrow"; for the member's own loan "Due back in X days", "Due today" or "X days overdue" (in red); for a book someone else has, "Borrowed until [date]"; and "N people waiting" when a queue exists. |
 | FR-22 | A member can hold one open loan per title. When no copy is on the shelf the member can join a queue: they see their own position ("You are #2 in line"), everyone else sees the queue length, and they can leave the queue at any time. |
 | FR-23 | When a copy comes back (a return, or staff adding copies) the first person in the queue is emailed and the copy is held for them for `QUEUE_HOLD_DAYS` = 2 days. A hold that is not taken up passes to the next person. Two members can never take the same last copy. |
-| FR-24 | Members return a loan, or cancel a reservation not yet collected, from My Account. A late return costs `LATE_FEE_PER_DAY` = S$0.50 for every day after the due date, worked out live from the dates; returning stops the fee growing. My Account shows each overdue loan with the fee so far and the total owed. Fees are paid at the front desk, where staff record the payment (FR-49); online payment is out of scope. |
+| FR-24 | Members return a loan, or cancel a reservation not yet collected, from My Account. A returned book is marked as handed in and waits under "Returns to check" until a librarian confirms it is back (the copy then goes to the queue) or marks it not received (the loan goes back to the member). A cancelled reservation needs no check. A late return costs `LATE_FEE_PER_DAY` = S$0.50 for every day after the due date, worked out live from the dates; handing the book in stops the fee growing. My Account shows each overdue loan with the fee so far and the total owed. Fees are paid at the front desk, where staff record the payment (FR-49); online payment is out of scope. |
 | FR-45 | New loans pause while the member has an overdue book, already holds `MAX_LOANS` = 6 open loans, or owes `FEE_BLOCK_LIMIT` = S$5.00 or more in unpaid fees. The server checks this inside the borrowing transaction; the Borrow page, the book page and My Account say which rule applies and what to do. Joining a queue is still allowed. |
 | FR-46 | A member can renew a collected loan from My Account `MAX_RENEWALS` = 1 time, adding another `LOAN_DAYS` to the due date, unless it is overdue or someone is waiting for the book. The renewal is emailed. |
 | FR-47 | Loans due today or within `DUE_SOON_DAYS` = 2 days are named in a reminder on Home and My Account; overdue loans are named on Home. |
@@ -187,3 +187,26 @@ an online library (see `CHANGELOG.md`). Constants live in `config/config.php`.
 |---|---|
 | FR-42 | A "Remember my email" cookie pre-fills the sign in form. |
 | FR-43 | Cookie values are validated before use; tampered values are ignored. |
+
+### F11 Loan reminder emails (Modern Enhancement, `modern-vue`)
+
+| ID | Requirement |
+|---|---|
+| FR-51 | Members receive loan reminder emails: on the collection day of a book reserved in advance, `DUE_SOON_DAYS` = 2 days before the due date (saying whether it can still be renewed), on the due day, and when overdue (with the fee so far, repeated every `REMIND_OVERDUE_DAYS` = 7 days). Each reminder is sent once; a renewed loan is reminded again for its new date. |
+| FR-52 | Admins see how many reminders are waiting and who gets them, and can send them with one button. `tools/send-reminders.php` sends them from a daily Windows scheduled task. A reminder counts as sent only when the mail server accepted it. |
+| FR-53 | Email can be delivered for real through Gmail with PHPMailer (`MAIL_TRANSPORT = 'gmail'`, settings in `config/mail.local.php`, which is not committed). Mercury stays the default, and every email is also written to `storage/mail.log`. |
+
+### F12 QR code to collect a book (Modern Enhancement, `modern-vue`)
+
+| ID | Requirement |
+|---|---|
+| FR-54 | A borrowed book waiting at the desk shows a signed collection QR code (for example `L59-7F3A9C`) on the member's My Account, from the moment it is borrowed until it is handed over. A code with a changed number or signature is refused. |
+| FR-55 | Admins have a Collection desk: scanning or typing the member's QR code shows the loan; from the chosen collection date, Hand over the book records the collection (`loans.collected_at`) and emails the member. A second hand-over, an early one, or one for a returned book is refused. |
+
+### Across all pages: live updates (Modern Enhancement, `modern-vue`)
+
+Not a function of its own: it makes every page update by itself.
+
+| ID | Requirement |
+|---|---|
+| FR-50 | Open pages update without a reload when someone else changes what they show: a hand-in appears on the admin dashboard, a confirmed return, a paid fee or a reminder appears on the member's My Account, book availability, room slots and the Open now status follow. A Node.js + Express server (`live/server.js`) pushes the change with Server-Sent Events; PHP stays the source of truth. Without that server every page still works and shows changes after a reload. |

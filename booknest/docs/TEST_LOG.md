@@ -46,7 +46,7 @@ that nobody has on loan or in a queue, and sets their copies through the admin f
 | T64 | FR-39 | Staff add a copy | Admin raises copies from 1 to 2 while a member waits | Offered at once | E2E | "Saved changes to Deep Work. 1 new copy was offered to the queue." | Pass |
 | T65 | FR-39 | Staff lower copies | Admin sets 1 copy while 2 are held | Refused, copies unchanged | E2E | "Deep Work has 2 copies out on loan or held for the queue, so the library must keep at least that many." | Pass |
 | T28 | AR-S7 | External email | Member registered as `...@gmail.com` borrows | Loan works, email refused and logged | E2E | `mail.log`: "refused: external recipient blocked" | Pass |
-| T04 | FR-11 | Serial lookup, member | Aisha searches `BNT-000123` | Panel with availability, copies, times borrowed, added by | E2E | Panel shown with all fields | Pass |
+| T04 | FR-11 | Serial lookup, member | Budy searches `BNT-000123` | Panel with availability, copies, times borrowed, added by | E2E | Panel shown with all fields | Pass |
 | T37 | FR-41 | Analytics accuracy | Dashboard "Late fees outstanding" vs a manual `SUM` over `loans` | Same value | E2E | S$12.50 on both (after the test loans) | Pass |
 | T39b | FR-39 | Delete protection | Admin deletes a book that has been borrowed | Refused, book kept | E2E | "...has been borrowed before, so it is kept for the loan records." | Pass |
 | T39 | AR-U1 | Three Click Rule for borrowing | Borrow, join a queue, return | 3, 2 and 3 clicks | Walk-through of the built pages (screenshots) | Book page shows Borrow; `borrow.php` has today chosen and one Confirm button; Join the queue and Return (with confirm) as in `STORYBOARD.md` | Pass |
@@ -106,7 +106,7 @@ the Borrowing section at the top. The rows below are the original results, kept 
 | T01 | FR-07 | Search | `catalogue.php?q=alice` | Alice's Adventures in Wonderland listed | E2E | HTTP 200, title found | Pass |
 | T02 | AR-S1 | Search injection | `q=' OR 1=1 --` | No error, no data leak, "No results" | E2E | HTTP 200, 0 cards, "No results" shown | Pass |
 | T03 | FR-08 | Sort whitelist | `sort=DROP` | Falls back to Title A to Z, no error | E2E | HTTP 200, "Title A to Z" selected | Pass |
-| T04 | FR-11 | Serial lookup, member | Aisha searches `BNT-000123` | Exact match panel with stock, status, sold, added by | E2E | Panel shown with all fields | Pass |
+| T04 | FR-11 | Serial lookup, member | Budy searches `BNT-000123` | Exact match panel with stock, status, sold, added by | E2E | Panel shown with all fields | Pass |
 | T05 | FR-11 | Serial lookup, visitor | Visitor searches `BNT-000123` | No details; "member feature" note | E2E | Note shown, no panel | Pass |
 | T45 | AR-B2 | Page count | Count top level `.php` pages | 1 home + 9 content pages (limit 10) | Code search | index, catalogue, book, read, checkout, rooms, account, sign-in, add-book, admin = 10 | Pass |
 
@@ -127,10 +127,10 @@ Swipe gestures were implemented with Pointer Events (40px threshold) and the sam
 
 | ID | Req | Feature | Input data | Expected output | Method | Actual result | Result |
 |---|---|---|---|---|---|---|---|
-| T17a | FR-32 | Sign in | `aisha@localhost` / `Member123!` | Signed in, welcome message | E2E | "Welcome back, Aisha." | Pass |
-| T17 | AR-S4 | Wrong password | `aisha@localhost` / `wrong-password1` | Generic error | E2E | "Email or password is incorrect." | Pass |
+| T17a | FR-32 | Sign in | `budy@localhost` / `Member123!` | Signed in, welcome message | E2E | "Welcome back, Budy." | Pass |
+| T17 | AR-S4 | Wrong password | `budy@localhost` / `wrong-password1` | Generic error | E2E | "Email or password is incorrect." | Pass |
 | T17b | AR-S4 | Unknown email | `nobody@localhost` | Same generic error (no account enumeration) | E2E | Same message | Pass |
-| T15 | FR-31 | Duplicate email | Register with `aisha@localhost` | Friendly error, no new row | E2E | Field error, users still 9 | Pass |
+| T15 | FR-31 | Duplicate email | Register with `budy@localhost` | Friendly error, no new row | E2E | Field error, users still 9 | Pass |
 | T15b | FR-31 | Register | New name, email, matching passwords, agree | Account created and signed in | E2E | "Welcome to BookNest, Test..." | Pass |
 | T16 | FR-31 | Password mismatch (HTML5/JS bypassed) | `Abcdefg123` / `Abcdefg999` | PHP rejects | E2E | "The passwords do not match." | Pass |
 | T18 | AR-S6 | Idle timeout | Session idle for 31 minutes | Signed out with a message | E2E (session file clock moved back 31 min) | "You were signed out after 30 minutes without activity." | Pass |
@@ -142,7 +142,7 @@ Swipe gestures were implemented with Pointer Events (40px threshold) and the sam
 
 | ID | Req | Feature | Input data | Expected output | Method | Actual result | Result |
 |---|---|---|---|---|---|---|---|
-| T31 | AR-S5 | Member opens admin | Aisha requests `admin.php` | Refused, quietly sent home | E2E | 303 to home, no admin content, no error message | Pass |
+| T31 | AR-S5 | Member opens admin | Budy requests `admin.php` | Refused, quietly sent home | E2E | 303 to home, no admin content, no error message | Pass |
 | T32 | AR-S5 | Visitor posts to add book | POST `process/add-book.php` signed out | Sent to sign in, nothing saved | E2E | 303 to `sign-in.php`, no new row | Pass |
 | T33 | AR-S3 | CSRF | POST `process/shelf.php` without token | Rejected, nothing saved | E2E | 303 with "session expired" message, shelf unchanged | Pass |
 | T33b | AR-S2 | Private folders | GET `config/config.php`, `storage/mail.log` | Blocked | E2E | 403 and 403 | Pass |
@@ -183,7 +183,7 @@ Swipe gestures were implemented with Pointer Events (40px threshold) and the sam
 |---|---|---|---|---|---|---|---|
 | T34 | FR-37 | Duplicate serial | Submit the same serial twice | Second rejected | E2E | "...is already in the library." | Pass |
 | T34b | FR-37 | Bad serial format | `ABC-12` | Rejected | E2E | "Use the format BNT- followed by six digits..." | Pass |
-| T35 | FR-36 | Member submission | New book by Aisha | Saved `pending`, not in catalogue | E2E | Status pending, not visible in search | Pass |
+| T35 | FR-36 | Member submission | New book by Budy | Saved `pending`, not in catalogue | E2E | Status pending, not visible in search | Pass |
 | T36 | FR-38 | Approve | Admin approves it | Appears in catalogue | E2E | "...is approved and now in the catalogue." and visible in search | Pass |
 | T37 | FR-41 | Analytics accuracy | Compare dashboard revenue with `SELECT SUM(total) ... 'paid'` | Same value | E2E | S$1,330.40 on both | Pass |
 | T38 | FR-34 | Shelf CRUD | Save, then remove | 1 row, then 0 rows | E2E | 1 → 0 | Pass |
@@ -254,5 +254,5 @@ including every earlier check. A fresh member ("Test Six") and books nobody had 
 | T101 | FR-49, FR-45 | Settle a fee | Admin marks the S$5.00 fee paid, then again; member borrows | Paid once, receipt emailed, member owes S$0 and can borrow | E2E | "Marked S$5.00 as paid for Test Six"; "already marked as paid"; "Late fee paid" logged; "Borrowed." | Pass |
 | T102 | FR-45 | Loan limit | Member with 6 open loans borrows a 7th | Refused | E2E | 6 open loans; "You have 6 books on loan, the most a member can hold at once is 6." | Pass |
 | T103 | FR-47 | Due today reminder | Loan moved to be due today | Named on My Account and Home | E2E | "Rich Dad Poor Dad is due today" on both pages | Pass |
-| T104 | FR-48 | Approval email | Admin approves Aisha's submission | Aisha emailed | E2E | "Your book is in the library" logged for aisha@localhost; flash "Aisha has been emailed." | Pass |
-| T105 | FR-48 | Rejection email | Admin rejects a second submission | Status `rejected`, Aisha emailed | E2E | "Your book suggestion" logged; "The Test of Patience was rejected. Aisha has been emailed." | Pass |
+| T104 | FR-48 | Approval email | Admin approves Budy's submission | Budy emailed | E2E | "Your book is in the library" logged for budy@localhost; flash "Budy has been emailed." | Pass |
+| T105 | FR-48 | Rejection email | Admin rejects a second submission | Status `rejected`, Budy emailed | E2E | "Your book suggestion" logged; "The Test of Patience was rejected. Budy has been emailed." | Pass |

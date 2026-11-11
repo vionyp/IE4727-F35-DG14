@@ -8,9 +8,11 @@
 //   already back) and dueSoon (collected, due within DUE_SOON_DAYS) are worked out from the list,
 //   so they change by themselves after a renew or a return, without reloading the page.
 // - watch(): when the totals change, the header badge and the two tiles above stay in step.
-// - <transition-group>: when a book is returned its row fades out ('loan-leave-*' classes in vue.css)
-//   instead of vanishing; v-for :key="l.id" lets Vue keep each row and animate only the one leaving.
+// - <transition-group>: when a book is handed in its row fades out of "Your loans" ('loan-leave-*'
+//   classes in vue.css) and appears under "Handed in, waiting for a librarian" until staff confirm it;
+//   v-for :key="l.id" lets Vue keep each row and animate only the one leaving.
 // - nextTick(): waits for Vue to update the page before moving keyboard focus.
+// - v-html: the QR code to collect a book arrives from api/loans.php as SVG built by PHP's qr_svg() (rectangles only).
 // - Composable: useFetch() (use-fetch.js) gives each request its own loading/error state.
 // - <toast-host> (toast.js, step 7) uses <Teleport> to show "Renewed ..." or "Returned ..." in the corner.
 // Server rules: Renew and Return POST to api/loans.php with the page's CSRF token. That endpoint calls
@@ -28,6 +30,7 @@
 
   // The same lock and clock icons that includes/views.php prints next to these notices.
   var ICON_LOCK = '<svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
+  var ICON_QR = '<svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 14v.01M14 21h7v-4"/></svg>';
   var ICON_CLOCK = '<svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
 
   var LoansPanel = {
@@ -41,6 +44,7 @@
       var api = window.BookNestVue;
 
       var loans = Vue.ref([]);
+      var handedIn = Vue.ref([]);
       var feesFromReturns = Vue.ref(0);
       var blocks = Vue.ref([]);
       var rules = Vue.ref({ maxLoans: 6, maxRenewals: 1, dueSoonDays: 2, lateFeePerDay: 0.5, loanDays: 14 });
@@ -55,6 +59,7 @@
       function apply(data) {
         if (!data || !Array.isArray(data.loans)) { return; }
         loans.value = data.loans;
+        handedIn.value = data.handedIn || [];
         feesFromReturns.value = data.feesFromReturns || 0;
         blocks.value = data.blocks || [];
         if (data.rules) { rules.value = data.rules; }
@@ -93,7 +98,7 @@
               highlight.value = kind === 'renew' ? loan.id : 0;
               say('success', res.data.message);
               if (api.toast) {
-                api.toast.show((kind === 'renew' ? 'Renewed ' : (loan.state === 'reserved' ? 'Cancelled the reservation for ' : 'Returned ')) + loan.title);
+                api.toast.show((kind === 'renew' ? 'Renewed ' : (loan.state === 'reserved' ? 'Cancelled the reservation for ' : 'Handed in ')) + loan.title);
               }
             } else {
               say('error', res.data.error || 'That did not work. Please reload the page.', res.status === 401 ? res.data.signin : '');
@@ -154,10 +159,16 @@
 
       Vue.onMounted(load);
 
+      // Live updates (live.js): a librarian or another member changed something this screen shows,
+      // so it loads its data from api/ again.
+      function onLive() { if (started) { load(); } }
+      Vue.onMounted(function () { window.addEventListener('booknest:live', onLive); });
+      Vue.onBeforeUnmount(function () { window.removeEventListener('booknest:live', onLive); });
+
       return {
         loans: loans, blocks: blocks, acting: action.loading, rules: rules, message: message, busyId: busyId, confirmId: confirmId,
         highlight: highlight, messageEl: messageEl, openCount: openCount, totalFee: totalFee, dueSoon: dueSoon,
-        reminder: reminder, renew: renew, askReturn: askReturn, giveBack: giveBack, money: money, daysText: daysText,
+        handedIn: handedIn, reminder: reminder, renew: renew, askReturn: askReturn, giveBack: giveBack, money: money, daysText: daysText,
         findUrl: api.url('catalogue.php?sort=available'), hasToast: !!api.toast
       };
     },
@@ -185,9 +196,13 @@
       '           It was due back on {{ l.dueLong }}. The fee grows by {{ money(rules.lateFeePerDay) }} a day until you return it.</p>' +
       '        <template v-else>' +
       '          <p><span class="avail" :class="l.daysLeft === 0 ? \'is-low\' : \'is-mine\'">{{ l.daysLeft === 0 ? \'Due today\' : \'Due back in \' + daysText(l.daysLeft) }}</span>' +
-      '             Collected {{ l.collectedShort }}, due {{ l.dueLong }}.<template v-if="l.renewals"> Renewed {{ l.renewals === 1 ? \'once\' : l.renewals + \' times\' }}.</template></p>' +
+      '             <template v-if="l.toCollect"><strong>Ready to collect at the front desk.</strong> Due</template><template v-else>Collected {{ l.collectedShort }}, due</template> {{ l.dueLong }}.<template v-if="l.renewals"> Renewed {{ l.renewals === 1 ? \'once\' : l.renewals + \' times\' }}.</template></p>' +
       '          <p v-if="!l.canRenew && l.renewals < rules.maxRenewals" class="small muted">{{ l.renewWhy }}</p>' +
       '        </template>' +
+      '        <details v-if="l.toCollect" class="desk-code"><summary>' + ICON_QR + ' Show QR code to collect</summary><div class="desk-code-body">' +
+      '          <span v-if="l.deskQr" v-html="l.deskQr"></span>' +
+      '          <p><strong class="desk-code-text">{{ l.deskCode }}</strong><br><span class="small muted">{{ l.deskHint }}</span></p>' +
+      '        </div></details>' +
       '      </div>' +
       '      <div class="loan-action cluster">' +
       '        <button v-if="l.canRenew" type="button" class="btn btn-secondary btn-sm" :disabled="acting" @click="renew(l)"' +
@@ -205,6 +220,19 @@
       '  </transition-group>' +
       '  <p v-else class="notice">No books on loan. Borrow up to {{ rules.maxLoans }} books at a time, free for {{ rules.loanDays }} days, and renew each one' +
       '     {{ rules.maxRenewals === 1 ? \'once\' : rules.maxRenewals + \' times\' }}. <a :href="findUrl">See what is on the shelf</a></p>' +
+      '  <template v-if="handedIn.length">' +
+      '    <h3 class="subsection-title">Handed in, waiting for a librarian</h3>' +
+      '    <transition-group tag="ul" name="loan" class="loan-list vl-handed-in" role="list">' +
+      '      <li v-for="h in handedIn" :key="h.id" class="loan-item" :data-loan="h.id">' +
+      '        <a :href="h.url" tabindex="-1" aria-hidden="true"><img class="line-cover" :src="h.cover" :alt="h.coverAlt" width="64" height="96" loading="lazy" decoding="async"></a>' +
+      '        <div class="loan-body">' +
+      '          <h3><a :href="h.url">{{ h.title }}</a> <span class="muted small">· {{ h.author }}</span></h3>' +
+      '          <p><span class="avail is-low">Being checked</span> You handed it in on {{ h.handedInLong }}. A librarian will confirm the return.' +
+      '             <template v-if="h.fee > 0"> It was {{ daysText(h.daysLate) }} late, so a late fee of {{ money(h.fee) }} will be added.</template></p>' +
+      '        </div>' +
+      '      </li>' +
+      '    </transition-group>' +
+      '  </template>' +
       '  <toast-host v-if="hasToast"></toast-host>' +
       '</div>'
   };

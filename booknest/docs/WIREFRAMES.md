@@ -44,7 +44,7 @@ DESKTOP
 |  [Borrow it free]  [Read a sample]                         +----------+        |
 +--------------------------------------------------------------------------------+
 | VISITOR: Three clicks to anything (3 points)     | SIGN IN CARD (email)(pass) [Sign in] |
-| MEMBER:  Welcome back, Aisha · next booking · [Add a book] [My Shelf]           |
+| MEMBER:  Welcome back, Budy · next booking · [Add a book] [My Shelf]           |
 +--------------------------------------------------------------------------------+
 | Recently viewed                                         [<] [>]  (cookie only) |
 | [▒] [▒] [▒] [▒] [▒] [▒]  -> scroll snap row                                   |
@@ -173,7 +173,7 @@ MOBILE: date chips scroll; table wrapper scrolls with sticky room column.
 
 ```
 +--------------------------------------------------------------------------------+
-| h1 Hello, Aisha                         [Add a book] [Admin] [Sign out]        |
+| h1 Hello, Budy                         [Add a book] [Admin] [Sign out]        |
 | tiles: On loan 2 | Fees owed S$2.00 | Waiting for 1 | Minutes left 60 | Shelf 4 |
 +--------------------------------------------------------------------------------+
 | Upcoming bookings: A01 · Tue 29 Sep · 14:00-15:00     [Cancel] -> [Yes, cancel]|

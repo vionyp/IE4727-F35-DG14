@@ -9,8 +9,11 @@ $bookings = db_all("SELECT rb.id, rb.booking_date, rb.start_time, rb.end_time, r
                     WHERE rb.user_id = ? AND rb.status = 'confirmed'
                       AND (rb.booking_date > CURDATE() OR (rb.booking_date = CURDATE() AND rb.start_time > CURTIME()))
                     ORDER BY rb.booking_date, rb.start_time", [$uid]);
-$loans = db_all("SELECT l.*, b.title, b.author, b.cover_path, b.cover_alt FROM loans l JOIN books b ON b.id = l.book_id
-                 WHERE l.user_id = ? AND l.status <> 'returned' ORDER BY l.due_date, l.id", [$uid]);
+$open = db_all("SELECT l.*, b.title, b.author, b.cover_path, b.cover_alt FROM loans l JOIN books b ON b.id = l.book_id
+                WHERE l.user_id = ? AND l.status <> 'returned' ORDER BY l.due_date, l.id", [$uid]);
+// Books the member still has, and books handed in that a librarian has not confirmed yet.
+$loans = array_values(array_filter($open, fn($l) => empty($l['return_requested_at'])));
+$handedIn = array_values(array_filter($open, fn($l) => !empty($l['return_requested_at'])));
 $history = db_all("SELECT l.*, b.title FROM loans l JOIN books b ON b.id = l.book_id
                    WHERE l.user_id = ? AND l.status = 'returned' ORDER BY l.returned_date DESC, l.id DESC LIMIT 10", [$uid]);
 $queue = db_all("SELECT q.*, b.title, b.author, b.cover_path, b.cover_alt FROM book_queue q JOIN books b ON b.id = q.book_id
@@ -50,7 +53,7 @@ require __DIR__ . '/includes/header.php';
     </div>
   </header>
 
-  <div class="tiles">
+  <div class="tiles" data-live="tiles">
     <div class="tile"><p class="tile-label">Books on loan</p><p class="tile-value"><?= count($loans) ?></p></div>
     <div class="tile<?= $owed > 0 ? ' tile-alert' : '' ?>"><p class="tile-label">Late fees owed</p><p class="tile-value"><?= money($owed) ?></p><?php if ($owed > 0): ?><p class="tile-note">Settle at the front desk</p><?php endif; ?></div>
     <div class="tile"><p class="tile-label">Waiting for</p><p class="tile-value"><?= count($queue) ?><small> <?= count($queue) === 1 ? 'book' : 'books' ?></small></p></div>
@@ -63,6 +66,8 @@ require __DIR__ . '/includes/header.php';
       <h2 id="loans-title">Your loans</h2>
       <a class="btn btn-secondary btn-sm" href="<?= e(url('catalogue.php?sort=available')) ?>">Find a book</a>
     </div>
+    <?php // Everything from here to "Waiting for" is what <LoansPanel> replaces, so live updates swap it as one piece. ?>
+    <div class="live-region" data-live="loans">
     <?php if ($blocks): ?>
     <div class="notice notice-alert" role="status"><?= icon('lock', 18) ?><p><strong>New loans are paused.</strong> <?= e(implode(' ', $blocks)) ?></p></div>
     <?php endif; ?>
@@ -81,11 +86,12 @@ require __DIR__ . '/includes/header.php';
           <?php elseif ($state === 'overdue'): ?>
           <p><span class="avail is-out"><?= $late ?> <?= $late === 1 ? 'day' : 'days' ?> overdue, <?= money(loan_fee($l)) ?> owed so far</span> It was due back on <?= e(long_date($l['due_date'])) ?>. The fee grows by <?= money(LATE_FEE_PER_DAY) ?> a day until you return it.</p>
           <?php else: ?>
-          <p><span class="avail <?= $daysLeft === 0 ? 'is-low' : 'is-mine' ?>"><?= $daysLeft === 0 ? 'Due today' : 'Due back in ' . $daysLeft . ($daysLeft === 1 ? ' day' : ' days') ?></span> Collected <?= e(short_date($l['collection_date'])) ?>, due <?= e(long_date($l['due_date'])) ?>.<?= (int) $l['renewals'] > 0 ? ' Renewed ' . ((int) $l['renewals'] === 1 ? 'once' : (int) $l['renewals'] . ' times') . '.' : '' ?></p>
+          <p><span class="avail <?= $daysLeft === 0 ? 'is-low' : 'is-mine' ?>"><?= $daysLeft === 0 ? 'Due today' : 'Due back in ' . $daysLeft . ($daysLeft === 1 ? ' day' : ' days') ?></span> <?= loan_to_collect($l) ? '<strong>Ready to collect at the front desk.</strong> Due' : 'Collected ' . e(short_date($l['collection_date'])) . ', due' ?> <?= e(long_date($l['due_date'])) ?>.<?= (int) $l['renewals'] > 0 ? ' Renewed ' . ((int) $l['renewals'] === 1 ? 'once' : (int) $l['renewals'] . ' times') . '.' : '' ?></p>
           <?php if ($renewWhy && (int) $l['renewals'] < MAX_RENEWALS): ?>
           <p class="small muted"><?= e($renewWhy) ?></p>
           <?php endif; ?>
           <?php endif; ?>
+          <?= loan_to_collect($l) ? desk_block(desk_code('L', (int) $l['id']), $l['title'], desk_hint($l)) : '' ?>
         </div>
         <div class="loan-action cluster">
         <?php if (!$renewWhy): ?>
@@ -115,8 +121,25 @@ require __DIR__ . '/includes/header.php';
     <p class="notice">No books on loan. Borrow up to <?= MAX_LOANS ?> books at a time, free for <?= LOAN_DAYS ?> days, and renew each one <?= MAX_RENEWALS === 1 ? 'once' : MAX_RENEWALS . ' times' ?>. <a href="<?= e(url('catalogue.php?sort=available')) ?>">See what is on the shelf</a></p>
     <?php endif; ?>
 
+    <?php if ($handedIn): ?>
+    <h3 class="subsection-title">Handed in, waiting for a librarian</h3>
+    <ul class="loan-list" role="list">
+      <?php foreach ($handedIn as $l): $fee = loan_fee($l); ?>
+      <li class="loan-item">
+        <a href="<?= e(book_url((int) $l['book_id'])) ?>" tabindex="-1" aria-hidden="true"><?= cover_img($l, 'line-cover', true, 64) ?></a>
+        <div class="loan-body">
+          <h3><a href="<?= e(book_url((int) $l['book_id'])) ?>"><?= e($l['title']) ?></a> <span class="muted small">· <?= e($l['author']) ?></span></h3>
+          <p><span class="avail is-low">Being checked</span> You handed it in on <?= e(long_date(loan_end_date($l))) ?>. A librarian will confirm the return.<?= $fee > 0 ? ' It was ' . days_text(loan_days_late($l)) . ' late, so a late fee of ' . money($fee) . ' will be added.' : '' ?></p>
+        </div>
+      </li>
+      <?php endforeach; ?>
+    </ul>
+    <?php endif; ?>
+    </div>
+
+    <div class="live-region" id="queue" data-live="queue">
     <?php if ($queue): ?>
-    <h3 class="subsection-title" id="queue">Waiting for</h3>
+    <h3 class="subsection-title">Waiting for</h3>
     <ul class="loan-list" role="list">
       <?php foreach ($queue as $q): ?>
       <li class="loan-item">
@@ -143,7 +166,9 @@ require __DIR__ . '/includes/header.php';
       <?php endforeach; ?>
     </ul>
     <?php endif; ?>
+    </div>
 
+    <div class="live-region" data-live="history">
     <?php if ($history): ?>
     <div class="table-wrap history">
       <table class="data-table">
@@ -163,9 +188,10 @@ require __DIR__ . '/includes/header.php';
       </table>
     </div>
     <?php endif; ?>
+    </div>
   </section>
 
-  <section id="bookings" class="account-section" aria-labelledby="bookings-title" tabindex="-1">
+  <section id="bookings" class="account-section" data-live="bookings" aria-labelledby="bookings-title" tabindex="-1">
     <div class="section-head">
       <h2 id="bookings-title">Upcoming study rooms</h2>
       <a class="btn btn-secondary btn-sm" href="<?= e(url('rooms.php')) ?>">Book a room</a>
@@ -177,8 +203,7 @@ require __DIR__ . '/includes/header.php';
         <div class="booking-date"><span><?= e(date('D', strtotime($b['booking_date']))) ?></span><strong><?= e(date('j', strtotime($b['booking_date']))) ?></strong><span><?= e(date('M', strtotime($b['booking_date']))) ?></span></div>
         <div class="booking-body">
           <h3><?= e($b['name']) ?> <span class="muted small">· <?= (int) $b['capacity'] ?> seats, <?= e($b['floor']) ?></span></h3>
-          <p><?= e(hm($b['start_time'])) ?> to <?= e(hm($b['end_time'])) ?><?= $b['purpose'] ? ' · ' . e($b['purpose']) : '' ?></p>
-        </div>
+          <p><?= e(hm($b['start_time'])) ?> to <?= e(hm($b['end_time'])) ?><?= $b['purpose'] ? ' · ' . e($b['purpose']) : '' ?></p>        </div>
         <form class="booking-cancel" action="<?= e(url('process/cancel-room.php')) ?>" method="post" data-confirm>
           <?= csrf_field() ?>
           <input type="hidden" name="booking_id" value="<?= (int) $b['id'] ?>">
@@ -222,7 +247,7 @@ require __DIR__ . '/includes/header.php';
     <?php endif; ?>
   </section>
 
-  <section id="submissions" class="account-section" aria-labelledby="subs-title" tabindex="-1">
+  <section id="submissions" class="account-section" data-live="submissions" aria-labelledby="subs-title" tabindex="-1">
     <div class="section-head">
       <h2 id="subs-title">Books you added</h2>
       <a class="btn btn-secondary btn-sm" href="<?= e(url('add-book.php')) ?>">Add a book</a>

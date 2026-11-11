@@ -8,7 +8,7 @@ same 3-layer validation (HTML attributes, `forms.js`, PHP).
 
 | Rule | How it is kept |
 |---|---|
-| Vue 3 only | No React, no Bootstrap or Tailwind, no other libraries. |
+| Vue 3 in the browser | No React, no Bootstrap or Tailwind, no other browser libraries. The one server package is Express, for live updates (section 8). |
 | No CDN, no build step | `assets/vendor/vue.global.prod.js` (Vue 3.4.38, includes the template compiler) is a local file. Templates are strings compiled in the browser. |
 | Progressive enhancement | PHP prints the full page first. Vue replaces a section only after its first data load succeeds. If Vue cannot load, the API fails or JavaScript is off, the Base page stays and works. |
 | PHP is the source of truth | Every action goes to `api/`, which calls the **same** functions as `process/` (`borrow_book()`, `join_queue()`, `renew_loan()`, `return_loan()`...). Vue only shows what PHP answered, word for word. |
@@ -82,13 +82,13 @@ Every Vue file starts with a comment block that explains the concepts it uses.
 Changed Base files: `catalogue.php`, `account.php`, `rooms.php`, `book.php`, `add-book.php`, one
 `$scripts` line each. Not changed: `process/`, `includes/` (except the new `api.php`), `sql/`, `config/`.
 
-## 6. Tests (3 November 2026, each suite on a fresh seed)
+## 6. Tests (3 November 2026, re-run 10 November after librarian-confirmed returns and live updates; each suite on a fresh seed)
 
 | Suite | Command | Result |
 |---|---|---|
-| Base end to end | `C:\xampp\php\php.exe tools\e2e-test.php` | **69 of 69**, 0 PHP errors |
+| Base end to end | `C:\xampp\php\php.exe tools\e2e-test.php` | **70 of 70**, 0 PHP errors |
 | API | `C:\xampp\php\php.exe tools\api-test.php` | **44 of 44** |
-| Browser | `node tools\vue-browser-test.mjs` | **68 of 68** |
+| Browser | `node tools\vue-browser-test.mjs` | **72 of 72** (with the live server running; 68 of 69 without it, L00 says to start it) |
 
 The tests change data (they borrow, renew, return), so re-import `sql/schema.sql` and
 `sql/seed.sql` afterwards for a clean demo.
@@ -118,3 +118,33 @@ Not run for the Modern Enhancement: Lighthouse, the W3C validator, a screen read
 | Book page | Borrow opens `borrow.php`; queue and shelf reload | Borrow, queue and shelf happen in place. `borrow.php` still exists for the Base flow. |
 | Add a book | Look up button reloads the page | Looked up while typing; the form field shows free or taken. |
 | All | Nothing to wait for | The PHP version shows for a moment, then Vue takes over. Refused actions appear as red 4xx lines in DevTools (they are expected answers, not errors). |
+
+## 8. Live updates (Node.js + Express)
+
+Vue updates a page after **your own** action. Live updates cover changes made by **someone else**:
+the admin marks Budy's fee as paid, and Budy's open My Account page changes without a reload.
+
+```
+admin clicks Mark as paid -> process/admin-action.php saves it, then live_notify(Budy, 'me', 'Your late fee ... is marked as paid.')
+                          -> after the request: PHP POSTs the note to http://127.0.0.1:3000/notify (live/server.js, Express)
+                          -> the server sends it to Budy's open pages over Server-Sent Events (GET /events)
+                          -> assets/js/live.js on Budy's page: shows the message, fires 'booknest:live' (Vue panels reload
+                             from api/), re-reads the page from PHP and swaps every part marked data-live that changed
+```
+
+| Piece | File | Job |
+|---|---|---|
+| Express server | `live/server.js`, `live/package.json` | Keeps one connection per open page, passes PHP's notes to the right pages (`all`, `admins`, or one member), announces opening and closing time |
+| PHP side | `includes/live.php` | `live_token()` signs who is reading; `live_notify()` queues a note, sent once the request has finished |
+| Browser side | `assets/js/live.js` | Connects, shows messages, refreshes the page parts; stops quietly if the server is not running |
+| Vue | `loans-panel.js`, `borrow-box.js`, `room-slots.js` | Listen for `booknest:live` and load their data again |
+
+Topics a page listens to are printed on `<body data-live-topics>`: `me` (your own account, every
+signed in page), `admin` (dashboard), `book:<id>` (a book page), `rooms` (Study Rooms), and `hours`
+(the opening hours in the footer, every page).
+
+Safety: the pass is signed with `LIVE_SECRET` and expires after 2 hours; only PHP on the same computer
+with the secret can send notes; notes only say *what* changed, and the page then asks PHP, which checks
+the session as usual. PHP stays the source of truth and the Express server stores nothing.
+
+How to run it: `docs/SETUP.md`, section 6b.

@@ -27,17 +27,17 @@
       title: 'Pick a book',
       text: 'Each card shows whether the book is on the shelf right now. This one is available to borrow.',
       hint: 'Open this book to continue.' },
-    { page: 'book.php', type: 'info', target: ['.book-actions'], restart: 1,
+    { page: 'book.php', type: 'info', target: ['.vb .book-actions', '.book-actions'], restart: 1,
       title: 'Everything you can do with a book',
       text: 'Borrow it, read a free sample first, or save it to your shelf for later. If every copy is out, join the queue and we will email you when one comes back.' },
-    { page: 'book.php', type: 'click', target: ['.book-actions a[href*="borrow.php"]'], restart: 1, fallback: 7,
+    { page: 'book.php', type: 'click', target: ['.book-actions a[href*="borrow.php"]', '.vb .book-actions button.btn-primary'], restart: 1, fallback: 7,
       title: 'Borrow it',
-      text: 'Borrowing is free. Nothing is confirmed until the next page, so go ahead.',
+      text: 'Borrowing is free. Nothing is confirmed until the next step, so go ahead.',
       hint: 'Select Borrow to continue.' },
-    { page: 'borrow.php', type: 'info', target: ['.borrow-form .field'], restart: 1,
+    { page: ['borrow.php', 'book.php'], type: 'info', target: ['.borrow-form .field', '.vb-picker .field'], restart: 1,
       title: 'Choose a collection date',
       text: 'Pick the day you will collect the book at the front desk, up to a week ahead. Each option shows the date the book is due back.' },
-    { page: 'borrow.php', type: 'info', target: ['.borrow-form button[type="submit"]'], restart: 1,
+    { page: ['borrow.php', 'book.php'], type: 'info', target: ['.borrow-form button[type="submit"]', '.vb-picker button[type="submit"]'], restart: 1,
       title: 'Confirm when you are ready',
       text: 'Confirm loan reserves the book and emails you the due date. The tour never borrows anything for you, so this button is paused for now.' },
     { page: 'any', type: 'click', target: ['.loans-link', '.tabbar a[href$="account.php"]'],
@@ -191,6 +191,8 @@
     body.appendChild(ui.root);
 
     document.addEventListener('keydown', onKey, true);
+    ui.watch = window.MutationObserver ? new MutationObserver(onPageChange) : null;
+    if (ui.watch) { ui.watch.observe(body, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden', 'class'] }); }
     window.addEventListener('resize', schedule);
     window.addEventListener('scroll', schedule, true);
     window.addEventListener('load', schedule);
@@ -200,6 +202,7 @@
   function teardown() {
     if (!ui) { return; }
     unbindTarget();
+    if (ui.watch) { ui.watch.disconnect(); }
     document.removeEventListener('keydown', onKey, true);
     window.removeEventListener('resize', schedule);
     window.removeEventListener('scroll', schedule, true);
@@ -213,7 +216,7 @@
   function show(n) {
     current = n;
     var s = STEPS[n];
-    if (s.page !== 'any' && s.page !== currentPage()) {
+    if (s.page !== 'any' && [].concat(s.page).indexOf(currentPage()) === -1) {
       render(PAUSED, null);
       return;
     }
@@ -275,6 +278,7 @@
   function place() {
     frame = 0;
     if (!ui) { return; }
+    refreshTarget();
     var vw = document.documentElement.clientWidth;
     var vh = window.innerHeight;
     var hole = null;
@@ -338,6 +342,28 @@
     el.style.height = Math.max(h, 0) + 'px';
   }
 
+  // Called when the page changes under the tour (ignoring the tour's own layer). A Vue screen that
+  // replaces the PHP version hides the element the tour was pointing at, so find it again.
+  function onPageChange(records) {
+    if (!ui) { return; }
+    for (var i = 0; i < records.length; i++) {
+      if (!ui.root.contains(records[i].target)) { schedule(); return; }
+    }
+  }
+
+  // If the highlighted element has gone or been hidden, points the step at its replacement.
+  function refreshTarget() {
+    if (!step || step.type === 'modal' || step === PAUSED || (target && target.isConnected && isShown(target))) { return; }
+    var el = findTarget(step);
+    if (!el || el === target) { return; }
+    unbindTarget();
+    target = el;
+    if (step.type === 'click') { el.addEventListener('click', onTargetClick); }
+    if (window.getComputedStyle(el).position !== 'fixed' && !el.closest('.site-header, .tabbar')) {
+      el.scrollIntoView({ block: 'center', behavior: 'auto' });
+    }
+  }
+
   // Repositions on the next animation frame after a scroll or resize.
   function schedule() {
     if (!frame) { frame = window.requestAnimationFrame(place); }
@@ -360,8 +386,9 @@
     writeStep(next);
     unbindTarget();
     if (ui) { ui.root.classList.add('is-leaving'); }
-    // A link to the same page (such as account.php#loans) does not reload, so show the next step here.
-    if (link.tagName === 'A' && link.pathname === window.location.pathname && link.hash) {
+    // A click that stays on this page (a link such as account.php#loans, or Vue's Borrow button, which
+    // opens the date picker in place) does not load a new page, so show the next step here.
+    if (link.tagName !== 'A' || (link.pathname === window.location.pathname && link.hash)) {
       window.setTimeout(function () { if (ui) { show(next); } }, 300);
     }
   }

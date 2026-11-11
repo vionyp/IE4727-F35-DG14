@@ -1,0 +1,16 @@
+{
+  "name": "booknest-live",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BookNest live updates: a small Node.js + Express server that pushes changes to open pages.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^5.3.0"
+  }
+}

@@ -16,7 +16,7 @@ require __DIR__ . '/catalogue.php';
 
 $users = [
     ['Grace Lim', 'admin@localhost', 'Admin123!', 'admin', 400],
-    ['Aisha Rahman', 'aisha@localhost', 'Member123!', 'member', 210],
+    ['Budy', 'budy@localhost', 'Member123!', 'member', 210],
     ['Ben Tan', 'ben@localhost', 'Member123!', 'member', 180],
     ['Chloe Wong', 'chloe@localhost', 'Member123!', 'member', 150],
     ['Daniel Ng', 'daniel@localhost', 'Member123!', 'member', 90],
@@ -355,8 +355,8 @@ for ($d = 90; $d >= 2; $d--) {
 }
 
 // Loans still out, chosen so every state appears in the demo.
-$addLoan($u['aisha@localhost'], 'Atomic Habits', -5, null, 'active');                // due back in 9 days
-$addLoan($u['aisha@localhost'], 'The Silent Patient', -18, null, 'overdue');         // 4 days overdue, S$2.00
+$addLoan($u['budy@localhost'], 'Atomic Habits', -5, null, 'active');                // due back in 9 days
+$addLoan($u['budy@localhost'], 'The Silent Patient', -18, null, 'overdue');         // 4 days overdue, S$2.00
 $addLoan($u['ben@localhost'], 'The Psychology of Money', -26, null, 'overdue');      // 12 days overdue, S$6.00
 $addLoan($u['ben@localhost'], 'Fourth Wing', -6, null, 'active');
 $addLoan($u['chloe@localhost'], 'Fourth Wing', -10, null, 'active');                 // both copies of Fourth Wing are out
@@ -373,7 +373,7 @@ $sql[] = "INSERT INTO loans (user_id, book_id, collection_date, due_date, return
 // Queues: Fourth Wing has three people waiting, Project Hail Mary one, and The Housemaid is held for Hana.
 $queueRows = [
     "({$bookId['Fourth Wing']}, {$u['daniel@localhost']}, NOW() - INTERVAL 5 DAY, 'waiting', NULL)",
-    "({$bookId['Fourth Wing']}, {$u['aisha@localhost']}, NOW() - INTERVAL 3 DAY, 'waiting', NULL)",
+    "({$bookId['Fourth Wing']}, {$u['budy@localhost']}, NOW() - INTERVAL 3 DAY, 'waiting', NULL)",
     "({$bookId['Fourth Wing']}, {$u['elena@localhost']}, NOW() - INTERVAL 1 DAY, 'waiting', NULL)",
     "({$bookId['Project Hail Mary']}, {$u['gavin@localhost']}, NOW() - INTERVAL 2 DAY, 'waiting', NULL)",
     "({$bookId['The Housemaid']}, {$u['hana@localhost']}, NOW() - INTERVAL 6 DAY, 'offered', NOW() - INTERVAL 1 DAY)",
@@ -382,7 +382,7 @@ $sql[] = "INSERT INTO book_queue (book_id, user_id, queued_at, status, offered_a
 
 // Room bookings from 14 days ago to 3 days ahead, respecting every room rule.
 $bookRows = [];
-$aisha = $userIds['aisha@localhost'];
+$budy = $userIds['budy@localhost'];
 $ben = $userIds['ben@localhost'];
 for ($d = -14; $d <= 3; $d++) {
     $roomBusy = [];
@@ -397,11 +397,11 @@ for ($d = -14; $d <= 3; $d++) {
         $userBusy[$ben][] = [600, 660];
     }
     if ($d === 1) {
-        // Aisha's upcoming booking tomorrow, shown as "Yours" and cancellable in My Account.
-        $bookRows[] = "(1, $aisha, CURDATE() + INTERVAL 1 DAY, '14:00:00', '15:00:00', 'Revision for finals', 'confirmed', NOW())";
+        // Budy's upcoming booking tomorrow, shown as "Yours" and cancellable in My Account.
+        $bookRows[] = "(1, $budy, CURDATE() + INTERVAL 1 DAY, '14:00:00', '15:00:00', 'Revision for finals', 'confirmed', NOW())";
         $roomBusy[1][] = [840, 900];
-        $userMinutes[$aisha] = 60;
-        $userBusy[$aisha][] = [840, 900];
+        $userMinutes[$budy] = 60;
+        $userBusy[$budy][] = [840, 900];
     }
     for ($t = 0; $t < 600 && $wanted > 0; $t++) {
         $room = mt_rand(1, count($rooms));
@@ -409,8 +409,8 @@ for ($d = -14; $d <= 3; $d++) {
             continue; // nobody books a closed room
         }
         $uid = $bookers[mt_rand(0, count($bookers) - 1)];
-        if ($d === 0 && $uid === $aisha) {
-            continue; // keep Aisha's quota free today for the live demo
+        if ($d === 0 && $uid === $budy) {
+            continue; // keep Budy's quota free today for the live demo
         }
         $hourWeights = [10, 11, 12, 13, 14, 14, 15, 15, 15, 16, 16, 17, 18, 19, 20];
         $startMin = $hourWeights[mt_rand(0, count($hourWeights) - 1)] * 60 + (mt_rand(0, 1) ? 30 : 0);
@@ -448,7 +448,7 @@ $sql[] = "INSERT INTO room_bookings (room_id, user_id, booking_date, start_time,
     . implode(",\n  ", $bookRows) . ";\n";
 
 // Shelves
-$shelf = [[$aisha, 1], [$aisha, 13], [$aisha, 25], [$aisha, 32], [$ben, 7], [$ben, 14], [$userIds['chloe@localhost'], 2]];
+$shelf = [[$budy, 1], [$budy, 13], [$budy, 25], [$budy, 32], [$ben, 7], [$ben, 14], [$userIds['chloe@localhost'], 2]];
 $sql[] = "INSERT INTO shelf (user_id, book_id, added_at) VALUES\n  "
     . implode(",\n  ", array_map(fn($s) => "({$s[0]}, {$s[1]}, NOW() - INTERVAL " . ($s[1] % 9) . ' DAY)', $shelf)) . ";\n";
 
@@ -479,6 +479,8 @@ $sql[] = "INSERT INTO loans (user_id, book_id, collection_date, due_date, return
     . implode(",\n  ", $rows) . ";\n";
 $sql[] = "INSERT INTO book_queue (book_id, user_id, queued_at, status, offered_at) VALUES\n  "
     . "({$bookId['Project Hail Mary']}, $budy, NOW() - INTERVAL 1 DAY, 'waiting', NULL);\n";
+$sql[] = "\n-- Loans whose collection day has passed were handed over at the desk that day; the rest wait for the desk check.\n"
+    . "UPDATE loans SET collected_at = TIMESTAMP(collection_date, '10:00:00') WHERE collection_date < CURDATE();\n";
 
 file_put_contents(APP_ROOT . '/sql/seed.sql', implode("\n", $sql));
 

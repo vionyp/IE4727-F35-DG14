@@ -320,7 +320,7 @@ $classics = [
 // Member submissions waiting for approval (public domain, so they include real sample pages):
 // [gid, markers, title, author, cat, year, pages, price, stock, added_by email, hook, synopsis]
 $pending = [
-    [45, ['Mrs. Rachel Lynde lived just where the Avonlea main road'], 'Anne of Green Gables', 'L. M. Montgomery', 'classics', 1908, 320, 10.90, 6, 'aisha@localhost',
+    [45, ['Mrs. Rachel Lynde lived just where the Avonlea main road'], 'Anne of Green Gables', 'L. M. Montgomery', 'classics', 1908, 320, 10.90, 6, 'budy@localhost',
      'They asked for a boy. They got Anne, with an e.',
      'Elderly siblings Matthew and Marilla Cuthbert send for an orphan boy to help on their farm on Prince Edward Island, and a talkative red haired girl arrives instead. Anne\'s imagination, mistakes and big heart slowly win over the whole town of Avonlea.'],
     [236, ['of a very warm evening in the Seeonee hills'], 'The Jungle Book', 'Rudyard Kipling', 'classics', 1894, 212, 9.90, 5, 'ben@localhost',

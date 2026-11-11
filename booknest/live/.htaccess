@@ -1,0 +1,2 @@
+# The live server runs on Node.js, not Apache: nothing in this folder is a web page.
+Require all denied

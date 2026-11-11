@@ -16,7 +16,7 @@ INSERT INTO categories (id, name, slug, blurb, sort_order) VALUES
 
 INSERT INTO users (id, full_name, email, password_hash, role, created_at) VALUES
   (1, 'Grace Lim', 'admin@localhost', '$2y$10$pSfeMqa8v5mRVZ31cKsj4uWOj4JgZz.ksZQ2i/A8DfbrDWbccYkPi', 'admin', NOW() - INTERVAL 400 DAY),
-  (2, 'Aisha Rahman', 'aisha@localhost', '$2y$10$R8WfnM4Anz/Psyc6QdtqUOINYaCIqMDfWd4KkmYrsVA0CCpOkW5pm', 'member', NOW() - INTERVAL 210 DAY),
+  (2, 'Budy', 'budy@localhost', '$2y$10$R8WfnM4Anz/Psyc6QdtqUOINYaCIqMDfWd4KkmYrsVA0CCpOkW5pm', 'member', NOW() - INTERVAL 210 DAY),
   (3, 'Ben Tan', 'ben@localhost', '$2y$10$m23f/qynY41yWjytDu448up/ZqkZIIUXoTOcApDLMDhhf0QJ87AIK', 'member', NOW() - INTERVAL 180 DAY),
   (4, 'Chloe Wong', 'chloe@localhost', '$2y$10$GqBV06MU9TY2aDPnpTV9v.76bL8URD2zTws.Kx/HW46LCA3jVa2qy', 'member', NOW() - INTERVAL 150 DAY),
   (5, 'Daniel Ng', 'daniel@localhost', '$2y$10$U28TRoqVJnCSaOqJMBxo8OnrSI87nSNP/iaT3jPxb8VyjINyesUPm', 'member', NOW() - INTERVAL 90 DAY),
@@ -2960,3 +2960,6 @@ INSERT INTO loans (user_id, book_id, collection_date, due_date, returned_date, s
 
 INSERT INTO book_queue (book_id, user_id, queued_at, status, offered_at) VALUES
   (25, 82, NOW() - INTERVAL 1 DAY, 'waiting', NULL);
+
+-- Loans whose collection day has passed were handed over at the desk that day; the rest wait for the desk check.
+UPDATE loans SET collected_at = TIMESTAMP(collection_date, '10:00:00') WHERE collection_date < CURDATE();

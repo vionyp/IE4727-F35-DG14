@@ -1,5 +1,5 @@
 <?php
-// Admin actions: approve or reject submissions (and email the member), settle late fees, edit or delete books, open or close rooms.
+// Admin actions: confirm or reject returns, hand a book over at the collection desk, send loan reminders, approve or reject submissions (and email the member), settle late fees, edit or delete books, open or close rooms.
 // Changing the number of copies locks the book row, so it cannot race a member borrowing the last copy.
 require __DIR__ . '/../includes/bootstrap.php';
 require_post();
@@ -8,12 +8,14 @@ verify_csrf();
 
 $action = input($_POST, 'action', 20);
 $id = input_int($_POST, 'id');
+// An action taken from the desk check goes back to it, so the librarian sees the result there.
+$deskBack = ($code = desk_parse(input($_POST, 'desk', 40))) ? 'admin.php?desk=' . rawurlencode(desk_code($code['kind'], $code['id'])) . '#desk' : '';
 
 switch ($action) {
     case 'approve':
     case 'reject':
         $status = $action === 'approve' ? 'approved' : 'rejected';
-        $sub = db_one("SELECT b.title, b.serial_no, u.full_name, u.email FROM books b LEFT JOIN users u ON u.id = b.added_by
+        $sub = db_one("SELECT b.title, b.serial_no, b.added_by, u.full_name, u.email FROM books b LEFT JOIN users u ON u.id = b.added_by
                        WHERE b.id = ? AND b.status = 'pending'", [$id]);
         if ($sub && db_exec("UPDATE books SET status = ?, created_at = IF(? = 'approved', NOW(), created_at) WHERE id = ? AND status = 'pending'", [$status, $status, $id])) {
             // Let the member who sent the book know the decision.
@@ -26,12 +28,51 @@ switch ($action) {
                             . "A librarian has reviewed it and it will not be added to the catalogue this time.\n"
                             . 'You are welcome to suggest other books from Add a book on BookNest.'));
             }
+            live_notify((int) $sub['added_by'], 'me', $status === 'approved' ? $sub['title'] . ', the book you added, is approved and now in the catalogue.'
+                : 'A librarian reviewed ' . $sub['title'] . ', the book you added. It will not be added this time.');
+            live_notify('admins', 'admin');
             flash('success', $sub['title'] . ($status === 'approved' ? ' is approved and now in the catalogue.' : ' was rejected.')
                 . ($sub['email'] ? ' ' . first_name($sub) . ' has been emailed.' : ''));
         } else {
             flash('error', 'That submission was already handled.');
         }
         redirect('admin.php#pending');
+
+    case 'confirm_return':
+        // The book a member handed in is really back: it becomes returned and the copy goes to the queue.
+        [$problem, $loan] = confirm_return($id);
+        if ($problem) {
+            flash('error', $problem);
+        } else {
+            $fee = loan_fee($loan);
+            flash('success', 'Confirmed ' . $loan['title'] . ' is back from ' . $loan['full_name'] . '.'
+                . ($fee > 0 ? ' Its late fee of ' . money($fee) . ' is now under Late fees to settle.' : '') . ' ' . first_name($loan) . ' has been emailed.');
+        }
+        redirect($deskBack ?: 'admin.php#returns');
+
+    case 'collect':
+        // The member showed their QR code at the desk and the librarian hands the book over.
+        [$problem, $loan] = collect_loan($id);
+        flash($problem ? 'error' : 'success', $problem ?: 'Handed ' . $loan['title'] . ' to ' . $loan['full_name'] . '. It is due back on '
+            . long_date($loan['due_date']) . '. ' . first_name($loan) . ' has been emailed.');
+        redirect($deskBack ?: 'admin.php#desk');
+
+    case 'reminders':
+        $counts = send_loan_reminders();
+        live_notify('admins', 'admin');
+        flash($counts['failed'] ? 'error' : 'success', 'Sent ' . reminder_summary($counts) . '.'
+            . ($counts['failed'] ? ' ' . $counts['failed'] . ' could not be sent (is the mail server running?) and will be tried again next time.' : ''));
+        redirect('admin.php#reminders');
+
+    case 'reject_return':
+        // The book is not on the desk: the loan goes back to the member as it was.
+        [$problem, $loan] = reject_return($id);
+        if ($problem) {
+            flash('error', $problem);
+        } else {
+            flash('success', $loan['title'] . ' is back on ' . $loan['full_name'] . "'s account as not received. " . first_name($loan) . ' has been emailed.');
+        }
+        redirect($deskBack ?: 'admin.php#returns');
 
     case 'paid':
         // Settles the late fee of a returned loan at the front desk. A loan still out has a fee that keeps
@@ -51,6 +92,8 @@ switch ($action) {
             send_mail($loan['email'], 'Late fee paid: ' . $loan['title'],
                 mail_body(first_name($loan), 'Thank you. We have received your late fee of ' . money($fee) . ' for ' . $loan['title']
                     . ', which came back ' . days_text(loan_days_late($loan)) . " late.\n\nThis is your receipt. Nothing more is owed for this loan."));
+            live_notify((int) $loan['user_id'], 'me', 'Your late fee of ' . money($fee) . ' for ' . $loan['title'] . ' is marked as paid.');
+            live_notify('admins', 'admin');
             flash('success', 'Marked ' . money($fee) . ' as paid for ' . $loan['full_name'] . ' (' . $loan['title'] . '). A receipt has been emailed.');
         }
         redirect('admin.php#fees');
@@ -90,6 +133,8 @@ switch ($action) {
                 throw $e;
             }
             send_queue_offers($offers);
+            live_notify('all', 'book:' . $id);
+            live_notify('admins', 'admin');
             flash('success', 'Saved changes to ' . $book['title'] . '.' . ($offers ? ' ' . count($offers) . ' new '
                 . (count($offers) === 1 ? 'copy was' : 'copies were') . ' offered to the queue.' : ''));
         }
@@ -111,6 +156,7 @@ switch ($action) {
         $room = db_one('SELECT id, name, is_active FROM study_rooms WHERE id = ?', [$id]);
         if ($room) {
             db_exec('UPDATE study_rooms SET is_active = ? WHERE id = ?', [$room['is_active'] ? 0 : 1, $id]);
+            live_notify('all', 'rooms');
             flash('success', $room['name'] . ($room['is_active'] ? ' is now closed to new bookings.' : ' is open for bookings again.'));
         }
         redirect('admin.php#rooms');

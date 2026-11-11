@@ -1,13 +1,14 @@
 <?php
 // Modern Enhancement: the member's loans for the Vue panel on My Account (assets/js/vue/loans-panel.js).
-//   GET                                   the open loans, fees owed, limits and the reasons borrowing is paused
+//   GET                                   the open loans, books handed in, fees owed, limits and the reasons borrowing is paused
 //   POST action=renew|return, loan_id, csrf   renew or return one loan, then the same data again
 // The POST calls renew_loan() and return_loan() from includes/loans.php, exactly like process/loan.php,
 // in the same order of checks (method, signed in, CSRF), and answers with the same messages. Every rule
 // (renew once, not when overdue or when someone waits, only your own loans) is enforced there, in PHP.
 require __DIR__ . '/../includes/api.php';
 
-// Builds the panel data for a member: open loans with their dates and fees, plus the totals' inputs.
+// Builds the panel data for a member: open loans with their dates and fees, books handed in that a
+// librarian has not confirmed yet, plus the totals' inputs.
 function loans_payload(array $user): array
 {
     $uid = (int) $user['id'];
@@ -15,8 +16,23 @@ function loans_payload(array $user): array
                     WHERE l.user_id = ? AND l.status <> 'returned' ORDER BY l.due_date, l.id", [$uid]);
     $today = date('Y-m-d');
     $loans = [];
+    $handedIn = [];
     $openFees = 0.0;
     foreach ($rows as $l) {
+        if (!empty($l['return_requested_at'])) {
+            $handedIn[] = [
+                'id' => (int) $l['id'],
+                'title' => $l['title'],
+                'author' => $l['author'],
+                'url' => book_url((int) $l['book_id']),
+                'cover' => url('assets/' . cover_file($l, true)),
+                'coverAlt' => $l['cover_alt'],
+                'handedInLong' => long_date(loan_end_date($l)),
+                'daysLate' => loan_days_late($l),
+                'fee' => loan_fee($l),
+            ];
+            continue;
+        }
         $why = renew_problem($l);
         $fee = loan_fee($l);
         $openFees += $fee;
@@ -40,15 +56,28 @@ function loans_payload(array $user): array
             'renewWhy' => $why,
             'renewToShort' => short_date(due_date_for($l['due_date'])),
             'renewToLong' => long_date(due_date_for($l['due_date'])),
-        ];
+        ] + desk_payload($l);
     }
     return [
         'loans' => $loans,
-        'feesFromReturns' => round(max(0, fees_owed($uid) - $openFees), 2),   // unpaid fees on books already back
+        'handedIn' => $handedIn,
+        'feesFromReturns' => round(max(0, fees_owed($uid) - $openFees), 2),   // unpaid fees on books handed in or already back
         'blocks' => borrow_blocks($uid),
         'rules' => ['maxLoans' => MAX_LOANS, 'maxRenewals' => MAX_RENEWALS, 'dueSoonDays' => DUE_SOON_DAYS,
             'lateFeePerDay' => LATE_FEE_PER_DAY, 'loanDays' => LOAN_DAYS],
     ];
+}
+
+// The QR code to collect a loan that is waiting at the desk, for the panel: the code, what to do with it
+// and the QR code as SVG markup (built by qr_svg() from rectangles only, so the panel can insert it with
+// v-html). A book already collected has no code to show.
+function desk_payload(array $l): array
+{
+    if (!loan_to_collect($l)) {
+        return ['toCollect' => false, 'deskCode' => '', 'deskHint' => '', 'deskQr' => ''];
+    }
+    $code = desk_code('L', (int) $l['id']);
+    return ['toCollect' => true, 'deskCode' => $code, 'deskHint' => desk_hint($l), 'deskQr' => qr_svg(desk_url($code), 'QR code for ' . $l['title'])];
 }
 
 $method = api_method('GET', 'POST');
@@ -70,14 +99,7 @@ if ($method === 'POST') {
         if ($problem) {
             api_error(422, $problem, loans_payload($user));
         }
-        if ($loan['collection_date'] > date('Y-m-d')) {
-            $message = 'Your reservation for ' . $loan['title'] . ' is cancelled.';
-        } else {
-            $fee = loan_fee($loan);
-            $message = 'Returned ' . $loan['title'] . '. ' . ($fee > 0
-                ? 'It was ' . days_text(loan_days_late($loan)) . ' late, so a late fee of ' . money($fee) . ' was added to your account.'
-                : 'Thank you for bringing it back on time.');
-        }
+        $message = return_message($loan);
     } else {
         api_error(400, 'Unknown action.', loans_payload($user));
     }

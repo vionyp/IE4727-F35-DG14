@@ -1,20 +1,25 @@
 <?php
-// Shared page header. Set $page_title, and optionally $page_desc, $body_class, $crumbs and $scripts, before including.
+// Shared page header. Set $page_title, and optionally $page_desc, $body_class, $crumbs, $scripts and $live_topics, before including.
 $page_title ??= 'Home';
 $page_desc ??= 'BookNest is an online library where you can browse, sample and borrow books, and book a quiet study room.';
 $body_class ??= '';
 $crumbs ??= [];
 $scripts ??= [];
 $user = current_user();
-$onLoan = $user ? count(my_loans()) : 0;
+$onLoan = $user ? my_loans_out_count() : 0;
 $nav = [['index.php', 'Home'], ['catalogue.php', 'Browse'], ['rooms.php', 'Study Rooms']];
 if (is_admin()) {
     $nav[] = ['admin.php', 'Admin'];
 }
 $searchValue = is_page('catalogue.php') ? input($_GET, 'q', 100) : '';
 // The onboarding tour runs for members only; a new registration starts it once.
-$tourNew = $user && !empty($_SESSION['tour_new']);
-unset($_SESSION['tour_new']);
+$tourNew = $user && !empty($_SESSION['tour_new']) && !is_live_refresh();
+if (!is_live_refresh()) {
+    unset($_SESSION['tour_new']);
+}
+// Live updates: what this page shows ($live_topics, set by the page) plus the member's own account.
+$live_topics ??= [];
+$liveTopics = implode(' ', array_unique(array_merge($user ? ['me'] : [], $live_topics)));
 // Scrolling "new arrivals" ticker under the header: the newest approved books.
 $tickerBooks = db_all("SELECT id, title, author FROM books WHERE status = 'approved' ORDER BY created_at DESC LIMIT 8");
 ?>
@@ -36,6 +41,7 @@ $tickerBooks = db_all("SELECT id, title, author FROM books WHERE status = 'appro
 <link rel="stylesheet" href="<?= e(asset('css/print.css')) ?>" media="print">
 <script>document.documentElement.className = 'js';</script>
 <script src="<?= e(asset('js/nav.js')) ?>" defer></script>
+<script src="<?= e(asset('js/live.js')) ?>" defer></script>
 <?php if ($user): ?>
 <script src="<?= e(asset('js/tour.js')) ?>" defer></script>
 <?php endif; ?>
@@ -43,7 +49,7 @@ $tickerBooks = db_all("SELECT id, title, author FROM books WHERE status = 'appro
 <script src="<?= e(asset('js/' . $s)) ?>" defer></script>
 <?php endforeach; ?>
 </head>
-<body class="<?= e($body_class) ?>"<?php if ($user): ?> data-tour="member" data-tour-cookie="<?= e(TOUR_COOKIE) ?>" data-base="<?= e(BASE_URL) ?>"<?= $tourNew ? ' data-tour-new' : '' ?><?php endif; ?>>
+<body class="<?= e($body_class) ?>" data-live-token="<?= e(live_token()) ?>" data-live-port="<?= (int) LIVE_PORT ?>" data-live-topics="<?= e($liveTopics) ?>"<?php if ($user): ?> data-tour="member" data-tour-cookie="<?= e(TOUR_COOKIE) ?>" data-base="<?= e(BASE_URL) ?>"<?= $tourNew ? ' data-tour-new' : '' ?><?php endif; ?>>
 <a class="skip-link" href="#main">Skip to content</a>
 <header class="site-header">
   <div class="container header-inner">
@@ -80,7 +86,7 @@ $tickerBooks = db_all("SELECT id, title, author FROM books WHERE status = 'appro
 
     <div class="header-actions">
       <?php if ($user): ?>
-      <a class="loans-link" href="<?= e(url('account.php#loans')) ?>">
+      <a class="loans-link" data-live="badge" href="<?= e(url('account.php#loans')) ?>">
         <?= icon('books') ?><span class="visually-hidden">My loans,</span>
         <span class="badge<?= $onLoan ? '' : ' is-empty' ?>"><?= $onLoan ?></span><span class="visually-hidden"> <?= $onLoan === 1 ? 'book' : 'books' ?> on loan</span>
       </a>

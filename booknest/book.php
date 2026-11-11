@@ -33,6 +33,7 @@ $similar = db_all('SELECT ' . card_columns() . " FROM books b WHERE b.status = '
 $page_title = $book['title'];
 $page_desc = $book['title'] . ' by ' . $book['author'] . '. ' . $book['hook'];
 $body_class = 'page-book';
+$live_topics = ['book:' . (int) $book['id']];   // live updates: copies and queue of this book
 $scripts = ['rows.js', 'vue/boot.js', 'vue/use-fetch.js', 'vue/notice-box.js', 'vue/toast.js', 'vue/borrow-box.js'];
 $crumbs = [['Home', url()], [$book['category'], url('catalogue.php?category=' . $book['category_slug'])], [$book['title'], null]];
 require __DIR__ . '/includes/header.php';
@@ -49,12 +50,12 @@ require __DIR__ . '/includes/header.php';
     <p class="book-author">by <?= e($book['author']) ?></p>
     <p class="book-facts"><?= rating_html($book['rating']) ?><span><?= e(year_label((int) $book['published_year'])) ?></span><span><?= e($book['format']) ?></span><span><?= (int) $book['pages'] ?> pages</span></p>
 
-    <div class="avail-box">
+    <div class="avail-box" data-live="avail">
       <p class="avail-line avail-lg"><?= availability_html($book) ?></p>
       <p class="small muted"><?= $available ?> of <?= (int) $book['stock'] ?> <?= (int) $book['stock'] === 1 ? 'copy' : 'copies' ?> on the shelf · <?= LOAN_DAYS ?> day loans, free for members</p>
     </div>
 
-    <div class="book-actions">
+    <div class="book-actions" data-live="actions">
       <?php if (!$user): ?>
       <a class="btn btn-primary" href="<?= e(url('sign-in.php?return=' . rawurlencode(url('borrow.php?id=' . $book['id'])))) ?>"><?= icon('books', 18) ?> Sign in to borrow</a>
       <?php elseif ($loan): ?>

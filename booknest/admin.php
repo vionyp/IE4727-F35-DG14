@@ -1,5 +1,6 @@
 <?php
-// Admin dashboard: analytics built with GROUP BY and aggregates, late fees to settle, approvals, book and room management.
+// Admin dashboard: collection desk (scan or type the QR code a member shows to collect a book), loan reminders, analytics built with GROUP BY and
+// aggregates, returns to check, late fees to settle, approvals, book and room management.
 require __DIR__ . '/includes/bootstrap.php';
 require_admin();
 
@@ -7,7 +8,7 @@ require_admin();
 $fee = loan_fee_sql();
 $kpi = db_one("SELECT
     SUM(l.status <> 'returned') AS on_loan,
-    SUM(l.status <> 'returned' AND l.due_date < CURDATE()) AS overdue,
+    SUM(l.status <> 'returned' AND l.return_requested_at IS NULL AND l.due_date < CURDATE()) AS overdue,
     SUM(l.status = 'reserved') AS reserved,
     SUM(l.created_at >= NOW() - INTERVAL 30 DAY) AS loans_30,
     COALESCE(SUM(CASE WHEN l.fee_cleared_at IS NULL THEN $fee END), 0) AS fees_owed
@@ -31,7 +32,13 @@ $queues = db_all("SELECT b.title, COUNT(q.id) AS waiting
 // Overdue loans with the fee owed so far, worst first.
 $overdue = db_all("SELECT l.id, l.due_date, b.title, u.full_name, u.email, DATEDIFF(CURDATE(), l.due_date) AS days_late, $fee AS fee
                    FROM loans l JOIN books b ON b.id = l.book_id JOIN users u ON u.id = l.user_id
-                   WHERE l.status <> 'returned' AND l.due_date < CURDATE() ORDER BY l.due_date, l.id LIMIT 10");
+                   WHERE l.status <> 'returned' AND l.return_requested_at IS NULL AND l.due_date < CURDATE() ORDER BY l.due_date, l.id LIMIT 10");
+// Books members say they have handed in, waiting for a librarian to check them, oldest first.
+$toCheck = db_all("SELECT l.id, l.due_date, l.return_requested_at, b.title, b.serial_no, u.full_name, u.email,
+                          GREATEST(0, DATEDIFF(DATE(l.return_requested_at), l.due_date)) AS days_late, $fee AS fee
+                   FROM loans l JOIN books b ON b.id = l.book_id JOIN users u ON u.id = l.user_id
+                   WHERE l.status <> 'returned' AND l.return_requested_at IS NOT NULL
+                   ORDER BY l.return_requested_at, l.id");
 // Late fees on returned books that have not been paid yet, ready to be settled at the desk.
 $toSettle = db_all("SELECT l.id, l.due_date, l.returned_date, b.title, u.full_name, u.email,
                            DATEDIFF(l.returned_date, l.due_date) AS days_late, $fee AS fee
@@ -66,6 +73,27 @@ $books = db_all("SELECT b.id, b.serial_no, b.title, b.author, b.price, b.stock, 
                  FROM books b JOIN categories c ON c.id = b.category_id WHERE b.status = 'approved' ORDER BY b.title");
 $rooms = db_all('SELECT * FROM study_rooms ORDER BY id');
 
+// Collection desk: the QR code a member shows to collect a borrowed book, scanned or typed (admin.php?desk=L59-7F3A9C).
+$deskInput = input($_GET, 'desk', 200);
+$desk = null;
+$deskError = '';
+if ($deskInput !== '') {
+    $parsed = desk_parse($deskInput);
+    if (!$parsed || $parsed['kind'] !== 'L') {
+        $deskError = 'That is not a BookNest collection code. Codes look like L59-7F3A9C and are under "Show QR code to collect" on the member\'s My Account.';
+    } else {
+        $desk = db_one('SELECT l.*, b.title, b.author, b.serial_no, u.full_name, u.email FROM loans l JOIN books b ON b.id = l.book_id
+                        JOIN users u ON u.id = l.user_id WHERE l.id = ?', [$parsed['id']]);
+        $deskError = $desk ? '' : 'That loan no longer exists.';
+        $deskCode = desk_code('L', $parsed['id']);
+    }
+}
+
+// Loan reminders waiting to be emailed, and how many went out today.
+$remindersDue = reminders_due();
+$dueCounts = array_count_values(array_column($remindersDue, 'kind'));
+$sentToday = (int) db_value('SELECT COUNT(*) FROM loan_reminders WHERE sent_at >= CURDATE()');
+
 // Prints one horizontal bar chart as an accessible table.
 function bar_table(string $caption, array $rows, string $labelKey, string $valueKey, callable $format, string $class = ''): string
 {
@@ -82,6 +110,7 @@ function bar_table(string $caption, array $rows, string $labelKey, string $value
 $page_title = 'Library dashboard';
 $body_class = 'page-admin';
 $scripts = ['forms.js'];
+$live_topics = ['admin'];   // live updates: loans, returns, fees, queues and submissions from every member
 $crumbs = [['Home', url()], ['Admin', null]];
 require __DIR__ . '/includes/header.php';
 $maxDay = max($perDay) ?: 1;
@@ -94,15 +123,86 @@ $maxDay = max($perDay) ?: 1;
     <p class="lede">Loans, late fees, queues, study room use and everything waiting for a decision.</p>
   </header>
 
-  <div class="tiles">
+  <section id="desk" class="account-section desk-check" aria-labelledby="desk-title" tabindex="-1">
+    <div class="section-head">
+      <h2 id="desk-title"><?= icon('qr', 22) ?> Collection desk</h2>
+      <p class="muted small">A member collecting a book shows the QR code on their My Account. Scan it with a phone signed in as staff, or type the code under it, then hand the book over.</p>
+    </div>
+    <form class="desk-form cluster" action="<?= e(url('admin.php')) ?>" method="get">
+      <label for="desk-code" class="visually-hidden">Collection code</label>
+      <input class="input" type="text" id="desk-code" name="desk" value="<?= e($deskInput) ?>" maxlength="200" placeholder="L59-7F3A9C" autocomplete="off" spellcheck="false" required>
+      <button class="btn btn-primary" type="submit">Check</button>
+      <?php if ($deskInput !== ''): ?><a class="btn btn-ghost" href="<?= e(url('admin.php')) ?>">Clear</a><?php endif; ?>
+    </form>
+    <?php if ($deskError): ?>
+    <p class="notice notice-alert" role="alert"><?= e($deskError) ?></p>
+    <?php elseif ($desk): $ready = loan_to_collect($desk) && $desk['collection_date'] <= date('Y-m-d'); ?>
+    <div class="panel desk-result" role="status">
+      <p class="eyebrow">Loan <?= e($deskCode) ?></p>
+      <h3><?= e($desk['title']) ?> <span class="muted small">· <?= e($desk['serial_no']) ?></span></h3>
+      <p><?= e($desk['full_name']) ?> <span class="muted small">(<?= e($desk['email']) ?>)</span></p>
+      <p>
+        <?php if ($ready): ?>
+        <span class="pill is-in">Ready to collect</span> Check it is <?= e($desk['full_name']) ?>, then hand the book over. Due back <?= e(long_date($desk['due_date'])) ?>.
+        <?php elseif (loan_to_collect($desk)): ?>
+        <span class="pill is-pending">Too early</span> <?= e(first_name($desk)) ?> chose to collect it from <?= e(long_date($desk['collection_date'])) ?>.
+        <?php elseif ($desk['returned_date']): ?>
+        <span class="pill is-out">Already returned</span> This loan ended on <?= e(long_date($desk['returned_date'])) ?>. There is nothing to collect.
+        <?php elseif ($desk['return_requested_at']): ?>
+        <span class="pill is-out">Handed in</span> The member has handed this book in; see Returns to check.
+        <?php else: ?>
+        <span class="pill is-out">Already collected</span> Handed over on <?= e(long_date(substr($desk['collected_at'], 0, 10))) ?> at <?= e(substr($desk['collected_at'], 11, 5)) ?>. Do not hand over a second copy.
+        <?php endif; ?>
+      </p>
+      <?php if ($ready): ?>
+      <form action="<?= e(url('process/admin-action.php')) ?>" method="post">
+        <?= csrf_field() ?>
+        <input type="hidden" name="id" value="<?= (int) $desk['id'] ?>">
+        <input type="hidden" name="desk" value="<?= e($deskCode) ?>">
+        <button class="btn btn-teal" type="submit" name="action" value="collect"><?= icon('books', 18) ?> Hand over the book</button>
+      </form>
+      <?php endif; ?>
+    </div>
+    <?php endif; ?>
+  </section>
+
+  <section id="reminders" class="account-section" data-live="reminders" aria-labelledby="reminders-title" tabindex="-1">
+    <div class="section-head">
+      <h2 id="reminders-title"><?= icon('mail', 22) ?> Loan reminders <span class="pill is-pending"><?= count($remindersDue) ?></span></h2>
+      <p class="muted small">Emails to members whose books are ready to collect, due soon, due today or overdue. Each goes out once
+        (overdue ones every <?= (int) REMIND_OVERDUE_DAYS ?> days). A scheduled task can send them every morning; see docs/SETUP.md.</p>
+    </div>
+    <div class="cluster">
+      <p><?= $remindersDue ? e(reminder_summary($dueCounts)) . ' waiting to be sent.' : 'Nothing waiting: every member has been reminded.' ?>
+        <span class="muted small"><?= $sentToday ?> sent today.</span></p>
+      <?php if ($remindersDue): ?>
+      <form action="<?= e(url('process/admin-action.php')) ?>" method="post">
+        <?= csrf_field() ?>
+        <button class="btn btn-primary btn-sm" type="submit" name="action" value="reminders"><?= icon('mail', 16) ?> Send reminders now</button>
+      </form>
+      <?php endif; ?>
+    </div>
+    <?php if ($remindersDue): ?>
+    <details class="reminder-list">
+      <summary>Who gets one</summary>
+      <ul role="list">
+        <?php foreach ($remindersDue as $r): ?>
+        <li><?= e($r['full_name']) ?>: <?= e($r['title']) ?> <span class="muted small">· <?= e(['collect' => 'ready to collect', 'due_soon' => due_soon_text($r), 'due_today' => 'due today', 'overdue' => days_text(loan_days_late($r)) . ' overdue'][$r['kind']]) ?></span></li>
+        <?php endforeach; ?>
+      </ul>
+    </details>
+    <?php endif; ?>
+  </section>
+
+  <div class="tiles" data-live="tiles">
     <div class="tile"><p class="tile-label">Books on loan</p><p class="tile-value"><?= (int) $kpi['on_loan'] ?></p><p class="tile-note"><?= (int) $kpi['reserved'] ?> waiting to be collected</p></div>
-    <div class="tile<?= (int) $kpi['overdue'] ? ' tile-alert' : '' ?>"><p class="tile-label">Overdue loans</p><p class="tile-value"><?= (int) $kpi['overdue'] ?></p></div>
+    <div class="tile<?= (int) $kpi['overdue'] ? ' tile-alert' : '' ?>"><p class="tile-label">Overdue loans</p><p class="tile-value"><?= (int) $kpi['overdue'] ?></p><?php if ($toCheck): ?><p class="tile-note"><a href="#returns"><?= count($toCheck) ?> <?= count($toCheck) === 1 ? 'return' : 'returns' ?> to check</a></p><?php endif; ?></div>
     <div class="tile"><p class="tile-label">Late fees outstanding</p><p class="tile-value"><?= money($kpi['fees_owed']) ?></p><p class="tile-note">across all members</p></div>
     <div class="tile"><p class="tile-label">People in queues</p><p class="tile-value"><?= $waitingTotal ?></p><p class="tile-note"><?= (int) $kpi['loans_30'] ?> loans in 30 days</p></div>
     <div class="tile"><p class="tile-label">Members</p><p class="tile-value"><?= $members ?></p><p class="tile-note"><?= $newMembers ?> joined in 30 days</p></div>
   </div>
 
-  <section class="analytics" aria-labelledby="lending-title">
+  <section class="analytics" data-live="lending" aria-labelledby="lending-title">
     <h2 id="lending-title" class="section-title">Lending</h2>
     <div class="analytics-grid">
       <div class="panel"><?= bar_table('Top 5 most borrowed books', $topBooks, 'title', 'loans', fn($r) => $r['loans'] . ' loans') ?></div>
@@ -140,7 +240,7 @@ $maxDay = max($perDay) ?: 1;
     </div>
   </section>
 
-  <section class="analytics" aria-labelledby="rooms-an-title">
+  <section class="analytics" data-live="room-stats" aria-labelledby="rooms-an-title">
     <h2 id="rooms-an-title" class="section-title">Study rooms</h2>
     <div class="analytics-grid">
       <div class="panel"><?= bar_table('The 8 busiest rooms (30 days back, 7 ahead)', $byRoom, 'name', 'bookings', fn($r) => $r['bookings'] . ' · ' . round($r['minutes'] / 60, 1) . ' h', 'bar-teal') ?></div>
@@ -150,7 +250,43 @@ $maxDay = max($perDay) ?: 1;
     </div>
   </section>
 
-  <section id="fees" class="account-section" aria-labelledby="fees-title" tabindex="-1">
+  <section id="returns" class="account-section" data-live="returns" aria-labelledby="returns-title" tabindex="-1">
+    <div class="section-head">
+      <h2 id="returns-title">Returns to check <span class="pill is-pending"><?= count($toCheck) ?></span></h2>
+      <p class="muted small">Members marked these books as handed in. Check each one is really back on the desk. Confirming frees the copy for the next reader; a late fee counts up to the day it was handed in.</p>
+    </div>
+    <?php if ($toCheck): ?>
+    <div class="table-wrap">
+      <table class="data-table">
+        <caption>Books handed in by members, waiting for a librarian, oldest first</caption>
+        <thead><tr><th scope="col">Member</th><th scope="col">Book</th><th scope="col">Due</th><th scope="col">Handed in</th><th scope="col" class="num">Late fee</th><th scope="col">Action</th></tr></thead>
+        <tbody>
+          <?php foreach ($toCheck as $r): ?>
+          <tr>
+            <th scope="row"><?= e($r['full_name']) ?><span class="muted small block"><?= e($r['email']) ?></span></th>
+            <td><?= e($r['title']) ?><span class="muted small block"><?= e($r['serial_no']) ?></span></td>
+            <td><?= e(date('j M', strtotime($r['due_date']))) ?></td>
+            <td><?= e(date('j M, H:i', strtotime($r['return_requested_at']))) ?><?= (int) $r['days_late'] ? ' <span class="pill is-out">' . days_text((int) $r['days_late']) . ' late</span>' : '' ?></td>
+            <td class="num"><?= (float) $r['fee'] > 0 ? money($r['fee']) : 'None' ?></td>
+            <td>
+              <form class="row-actions" action="<?= e(url('process/admin-action.php')) ?>" method="post">
+                <?= csrf_field() ?>
+                <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
+                <button class="btn btn-teal btn-sm" type="submit" name="action" value="confirm_return" aria-label="Confirm <?= e($r['title']) ?> is back from <?= e($r['full_name']) ?>">Confirm returned</button>
+                <button class="btn btn-ghost btn-sm" type="submit" name="action" value="reject_return" aria-label="<?= e($r['title']) ?> from <?= e($r['full_name']) ?> was not received">Not received</button>
+              </form>
+            </td>
+          </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+    <?php else: ?>
+    <p class="notice">No returns waiting to be checked.</p>
+    <?php endif; ?>
+  </section>
+
+  <section id="fees" class="account-section" data-live="fees" aria-labelledby="fees-title" tabindex="-1">
     <div class="section-head">
       <h2 id="fees-title">Late fees to settle <span class="pill is-pending"><?= count($toSettle) ?></span></h2>
       <p class="muted small">Books that came back late. Mark a fee as paid when the member settles it at the desk. Fees on books still out keep growing, so they are settled after the return.</p>
@@ -185,7 +321,7 @@ $maxDay = max($perDay) ?: 1;
     <?php endif; ?>
   </section>
 
-  <section id="pending" class="account-section" aria-labelledby="pending-title" tabindex="-1">
+  <section id="pending" class="account-section" data-live="pending" aria-labelledby="pending-title" tabindex="-1">
     <div class="section-head"><h2 id="pending-title">Waiting for review <span class="pill is-pending"><?= count($pending) ?></span></h2></div>
     <?php if ($pending): ?>
     <ul class="pending-list" role="list">

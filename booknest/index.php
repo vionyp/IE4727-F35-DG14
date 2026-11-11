@@ -77,7 +77,7 @@ require __DIR__ . '/includes/header.php';
   <?php endif; ?>
 
   <?php if ($user): ?>
-  <section class="welcome panel" aria-labelledby="welcome-title">
+  <section class="welcome panel" data-live="welcome" aria-labelledby="welcome-title">
     <div>
       <p class="eyebrow">Your library</p>
       <h2 id="welcome-title">Welcome back, <?= e(first_name($user)) ?>.</h2>
@@ -94,7 +94,7 @@ require __DIR__ . '/includes/header.php';
       <?php endif; ?>
     </div>
     <ul class="welcome-links" role="list">
-      <li><a class="btn btn-secondary" href="<?= e(url('account.php#loans')) ?>"><?= icon('books', 18) ?> My loans (<?= count(my_loans()) ?>)</a></li>
+      <li><a class="btn btn-secondary" href="<?= e(url('account.php#loans')) ?>"><?= icon('books', 18) ?> My loans (<?= my_loans_out_count() ?>)</a></li>
       <li><a class="btn btn-secondary" href="<?= e(url('account.php#shelf')) ?>"><?= icon('bookmark', 18) ?> My Shelf (<?= $shelfCount ?>)</a></li>
       <li><a class="btn btn-secondary" href="<?= e(url('rooms.php')) ?>"><?= icon('door', 18) ?> Study rooms</a></li>
       <li><a class="btn btn-secondary" href="<?= e(url('add-book.php')) ?>"><?= icon('plus', 18) ?> Add a book</a></li>
@@ -165,7 +165,7 @@ require __DIR__ . '/includes/header.php';
 
   <section class="visit" aria-labelledby="visit-title">
     <div class="visit-top">
-      <p class="status-pill <?= $status['open'] ? 'is-open' : 'is-closed' ?>"><span class="dot" aria-hidden="true"></span><?= e($status['label']) ?> <span class="status-detail">· <?= e($status['detail']) ?></span></p>
+      <p data-live="hours-home" class="status-pill <?= $status['open'] ? 'is-open' : 'is-closed' ?>"><span class="dot" aria-hidden="true"></span><?= e($status['label']) ?> <span class="status-detail">· <?= e($status['detail']) ?></span></p>
       <span class="visit-zone">SGT (UTC+8)</span>
     </div>
     <div class="visit-place">

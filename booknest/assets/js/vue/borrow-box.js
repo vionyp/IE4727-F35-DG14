@@ -154,6 +154,12 @@
 
       Vue.onMounted(load);
 
+      // Live updates (live.js): a librarian or another member changed something this screen shows,
+      // so it loads its data from api/ again.
+      function onLive() { if (started) { load(); } }
+      Vue.onMounted(function () { window.addEventListener('booknest:live', onLive); });
+      Vue.onBeforeUnmount(function () { window.removeEventListener('booknest:live', onLive); });
+
       return {
         data: data, picking: picking, date: date, message: message, messageEl: messageEl, dateEl: dateEl,
         acting: action.loading, mode: mode, canBorrow: canBorrow, chosen: chosen, copiesLine: copiesLine,

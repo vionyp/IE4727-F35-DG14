@@ -31,10 +31,20 @@ function days_text(int $n): string
     return $n . ($n === 1 ? ' day' : ' days');
 }
 
-// Returns how many days a loan is (or was) late: counted up to today, or up to the return date.
+// Returns the day a loan stopped counting as out for fees: the return date, or the day the member
+// handed it in while a librarian has not confirmed it yet, or '' while the member still has it.
+function loan_end_date(array $loan): string
+{
+    if (!empty($loan['returned_date'])) {
+        return $loan['returned_date'];
+    }
+    return empty($loan['return_requested_at']) ? '' : substr($loan['return_requested_at'], 0, 10);
+}
+
+// Returns how many days a loan is (or was) late: counted up to today, or up to the day it was handed in.
 function loan_days_late(array $loan): int
 {
-    $end = $loan['returned_date'] ?: date('Y-m-d');
+    $end = loan_end_date($loan) ?: date('Y-m-d');
     return max(0, days_between($loan['due_date'], $end));
 }
 
@@ -47,15 +57,19 @@ function loan_fee(array $loan): float
 // Returns the SQL expression for a loan's late fee, so totals use exactly the same rule as loan_fee().
 function loan_fee_sql(string $alias = 'l'): string
 {
-    return "(GREATEST(0, DATEDIFF(COALESCE($alias.returned_date, CURDATE()), $alias.due_date)) * " . number_format(LATE_FEE_PER_DAY, 2, '.', '') . ')';
+    return "(GREATEST(0, DATEDIFF(COALESCE($alias.returned_date, DATE($alias.return_requested_at), CURDATE()), $alias.due_date)) * " . number_format(LATE_FEE_PER_DAY, 2, '.', '') . ')';
 }
 
-// Returns the state of a loan right now: reserved, active, overdue or returned.
+// Returns the state of a loan right now: reserved, active, overdue, returning (handed in, waiting for
+// a librarian to confirm) or returned.
 function loan_state(array $loan): string
 {
     $today = date('Y-m-d');
     if ($loan['returned_date']) {
         return 'returned';
+    }
+    if (!empty($loan['return_requested_at'])) {
+        return 'returning';
     }
     if ($loan['collection_date'] > $today) {
         return 'reserved';
@@ -71,11 +85,12 @@ function fees_owed(int $userId): float
 }
 
 // Returns the reasons a member may not borrow right now (an empty list means they may).
-// Joining a queue is still allowed; only new loans stop.
+// Joining a queue is still allowed; only new loans stop. A book the member has handed in no longer
+// counts as on loan or overdue here, even before a librarian confirms it.
 function borrow_blocks(int $userId): array
 {
     $row = db_one("SELECT COUNT(*) AS open_loans, COALESCE(SUM(due_date < CURDATE()), 0) AS overdue
-                   FROM loans WHERE user_id = ? AND status <> 'returned'", [$userId]);
+                   FROM loans WHERE user_id = ? AND status <> 'returned' AND return_requested_at IS NULL", [$userId]);
     $open = (int) $row['open_loans'];
     $overdue = (int) $row['overdue'];
     $owed = fees_owed($userId);
@@ -99,7 +114,7 @@ function borrow_blocks(int $userId): array
 function loan_alerts(int $userId): array
 {
     $rows = db_all("SELECT l.*, b.title FROM loans l JOIN books b ON b.id = l.book_id
-                    WHERE l.user_id = ? AND l.status <> 'returned' AND l.collection_date <= CURDATE()
+                    WHERE l.user_id = ? AND l.status <> 'returned' AND l.return_requested_at IS NULL AND l.collection_date <= CURDATE()
                       AND l.due_date <= CURDATE() + INTERVAL " . (int) DUE_SOON_DAYS . " DAY
                     ORDER BY l.due_date, l.id", [$userId]);
     $today = date('Y-m-d');
@@ -162,6 +177,12 @@ function my_loans(): array
     return $loans;
 }
 
+// Returns how many books the signed in member still has (handed in books waiting for a check are left out).
+function my_loans_out_count(): int
+{
+    return count(array_filter(my_loans(), fn($l) => empty($l['return_requested_at'])));
+}
+
 // Returns the signed in member's queue places (waiting or offered), keyed by book id, with their position.
 function my_queue(): array
 {
@@ -205,6 +226,9 @@ function availability_label(array $b): array
 
     if ($loan = my_loans()[$id] ?? null) {
         $state = loan_state($loan);
+        if ($state === 'returning') {
+            return ['Handed in, waiting for a librarian', 'is-low', ''];
+        }
         if ($state === 'reserved') {
             return ['Collect from ' . short_date($loan['collection_date']), 'is-mine', ''];
         }
@@ -278,6 +302,7 @@ function send_queue_offers(array $offers): void
             mail_body(first_name($o), "Good news. A copy of " . $o['title'] . " is back on the shelf and we are holding it for you.\n\n"
                 . "Borrow it on BookNest by $until, then collect it at the front desk on the date you choose."
                 . "\nIf you do not borrow it by then, the copy passes to the next person in the queue."));
+        live_notify((int) $o['user_id'], 'me', 'A copy of ' . $o['title'] . ' is ready for you. Borrow it by ' . $until . '.');
     }
 }
 
@@ -304,7 +329,7 @@ function loans_sync(): void
         $db->begin_transaction();
         try {
             db_one('SELECT id FROM books WHERE id = ? FOR UPDATE', [$bookId]);
-            $expired = db_all("SELECT q.id, u.full_name, u.email, b.title FROM book_queue q JOIN users u ON u.id = q.user_id
+            $expired = db_all("SELECT q.id, q.user_id, u.full_name, u.email, b.title FROM book_queue q JOIN users u ON u.id = q.user_id
                                JOIN books b ON b.id = q.book_id
                                WHERE q.book_id = ? AND q.status = 'offered' AND q.offered_at < NOW() - INTERVAL $hold DAY", [$bookId]);
             foreach ($expired as $x) {
@@ -320,8 +345,11 @@ function loans_sync(): void
             send_mail($x['email'], 'Your hold on ' . $x['title'] . ' has ended',
                 mail_body(first_name($x), 'We held a copy of ' . $x['title'] . ' for you for ' . QUEUE_HOLD_DAYS . " days, but it was not borrowed in time,\n"
                     . 'so it has passed to the next person in the queue. You are welcome to join the queue again from the book page.'));
+            live_notify((int) $x['user_id'], 'me');
         }
         send_queue_offers($offers);
+        live_notify('all', 'book:' . $bookId);
+        live_notify('admins', 'admin');
     }
 }
 
@@ -388,6 +416,9 @@ function borrow_book(array $user, int $bookId, string $collectionDate): array
         mail_body(first_name($user), 'Your loan is confirmed.' . "\n\n  Book: " . $book['title'] . "\n  Collect from: " . long_date($collectionDate)
             . ' at the front desk' . "\n  Due back: " . long_date($due) . "\n  Loan number: $loanId\n\n"
             . 'Late returns cost ' . money(LATE_FEE_PER_DAY) . ' a day. You can return the book early at any time.'));
+    live_notify($uid, 'me');
+    live_notify('all', 'book:' . $bookId);
+    live_notify('admins', 'admin');
     return ['', $loanId];
 }
 
@@ -423,6 +454,9 @@ function join_queue(array $user, int $bookId): array
         $db->rollback();
         throw $e;
     }
+    live_notify($uid, 'me');
+    live_notify('all', 'book:' . $bookId);
+    live_notify('admins', 'admin');
     return ['', queue_position($entry)];
 }
 
@@ -447,17 +481,43 @@ function leave_queue(array $user, int $bookId): string
         throw $e;
     }
     send_queue_offers($offers);
+    live_notify((int) $user['id'], 'me');
+    live_notify('all', 'book:' . $bookId);
+    live_notify('admins', 'admin');
     return '';
 }
 
-// Returns a loan (or cancels a reservation not yet collected), then offers the copy to the queue.
-// Returns [error or '', the loan as it was saved].
+// A member gives a loan back. A reservation that was never collected is cancelled at once and its copy
+// goes to the queue. A collected book is only marked as handed in: a librarian confirms it at the desk
+// with confirm_return() before the copy counts as back. Returns [error or '', the loan as it was saved].
 function return_loan(array $user, int $loanId): array
 {
     $loan = db_one("SELECT l.*, b.title FROM loans l JOIN books b ON b.id = l.book_id WHERE l.id = ? AND l.user_id = ?", [$loanId, $user['id']]);
     if (!$loan || $loan['status'] === 'returned') {
         return ['We could not find that loan. It may already be returned.', []];
     }
+    if (!empty($loan['return_requested_at'])) {
+        return ['You have already handed in ' . $loan['title'] . '. A librarian is checking it.', []];
+    }
+
+    if ($loan['collection_date'] <= date('Y-m-d')) {
+        $changed = db_exec("UPDATE loans SET return_requested_at = NOW() WHERE id = ? AND user_id = ? AND status <> 'returned' AND return_requested_at IS NULL",
+            [$loanId, $user['id']]);
+        if ($changed !== 1) {
+            return ['That loan has already been handed in.', []];
+        }
+        $loan['return_requested_at'] = date('Y-m-d H:i:s');
+        $fee = loan_fee($loan);
+        send_mail($user['email'], 'Return received: ' . $loan['title'],
+            mail_body(first_name($user), 'You have handed in ' . $loan['title'] . ' on ' . long_date(loan_end_date($loan)) . ".\n\n"
+                . 'A librarian will check the book and confirm the return. We will email you when it is done.'
+                . ($fee > 0 ? "\n\nIt came back " . days_text(loan_days_late($loan)) . ' late, so a late fee of ' . money($fee)
+                    . ' will be added once the return is confirmed. The fee has stopped growing.' : '')));
+        live_notify((int) $user['id'], 'me');
+        live_notify('admins', 'admin', ($user['full_name'] ?? 'A member') . ' handed in ' . $loan['title'] . '. Check it under Returns to check.');
+        return ['', $loan];
+    }
+
     $db = db();
     $db->begin_transaction();
     try {
@@ -474,16 +534,118 @@ function return_loan(array $user, int $loanId): array
         $db->rollback();
         throw $e;
     }
-    $wasReserved = $loan['collection_date'] > date('Y-m-d');
     $loan['returned_date'] = date('Y-m-d');
-    $fee = loan_fee($loan);
-    send_mail($user['email'], ($wasReserved ? 'Reservation cancelled: ' : 'Returned: ') . $loan['title'],
-        mail_body(first_name($user), ($wasReserved
-            ? 'Your reservation for ' . $loan['title'] . ' is cancelled. Nothing is owed.'
-            : 'Thank you for returning ' . $loan['title'] . ' on ' . long_date($loan['returned_date']) . '.'
-                . ($fee > 0 ? "\n\nIt came back " . days_text(loan_days_late($loan)) . ' late, so a late fee of ' . money($fee)
-                    . ' has been added to your account. Please settle it at the front desk.' : "\n\nIt came back on time. No fee is due."))));
+    send_mail($user['email'], 'Reservation cancelled: ' . $loan['title'],
+        mail_body(first_name($user), 'Your reservation for ' . $loan['title'] . ' is cancelled. Nothing is owed.'));
     send_queue_offers($offers);
+    live_notify((int) $user['id'], 'me');
+    live_notify('all', 'book:' . (int) $loan['book_id']);
+    live_notify('admins', 'admin');
+    return ['', $loan];
+}
+
+// Returns the message a member sees after return_loan() worked.
+function return_message(array $loan): string
+{
+    if (!empty($loan['returned_date'])) {
+        return 'Your reservation for ' . $loan['title'] . ' is cancelled.';
+    }
+    $fee = loan_fee($loan);
+    return 'Handed in ' . $loan['title'] . '. A librarian will check it and confirm the return. '
+        . ($fee > 0 ? 'It was ' . days_text(loan_days_late($loan)) . ' late, so a late fee of ' . money($fee) . ' will be added. The fee has stopped growing.'
+                    : 'Thank you for bringing it back on time.');
+}
+
+// A librarian confirms that a handed in book is really back. The return date is the day the member
+// handed it in, so the fee is the same one they were told. The copy then goes to the queue.
+// Returns [error or '', the loan with the member's name and email].
+function confirm_return(int $loanId): array
+{
+    $bookId = (int) db_value('SELECT book_id FROM loans WHERE id = ?', [$loanId]);
+    if (!$bookId) {
+        return ['That loan no longer exists.', []];
+    }
+    $db = db();
+    $db->begin_transaction();
+    try {
+        db_one('SELECT id FROM books WHERE id = ? FOR UPDATE', [$bookId]);
+        $loan = db_one('SELECT l.*, b.title, u.full_name, u.email FROM loans l JOIN books b ON b.id = l.book_id
+                        JOIN users u ON u.id = l.user_id WHERE l.id = ? FOR UPDATE', [$loanId]);
+        if ($loan['status'] === 'returned' || empty($loan['return_requested_at'])) {
+            $db->rollback();
+            return ['That return was already handled.', []];
+        }
+        db_exec("UPDATE loans SET returned_date = DATE(return_requested_at), status = 'returned' WHERE id = ?", [$loanId]);
+        $offers = queue_offer_next($bookId);
+        $db->commit();
+    } catch (Throwable $e) {
+        $db->rollback();
+        throw $e;
+    }
+    $loan['returned_date'] = loan_end_date($loan);
+    $loan['status'] = 'returned';
+    $fee = loan_fee($loan);
+    send_mail($loan['email'], 'Returned: ' . $loan['title'],
+        mail_body(first_name($loan), 'A librarian has checked ' . $loan['title'] . '. Thank you for returning it on ' . long_date($loan['returned_date']) . '.'
+            . ($fee > 0 ? "\n\nIt came back " . days_text(loan_days_late($loan)) . ' late, so a late fee of ' . money($fee)
+                . ' has been added to your account. Please settle it at the front desk.' : "\n\nIt came back on time. No fee is due.")));
+    send_queue_offers($offers);
+    live_notify((int) $loan['user_id'], 'me', 'A librarian confirmed ' . $loan['title'] . ' is back.'
+        . ($fee > 0 ? ' A late fee of ' . money($fee) . ' was added to your account.' : ' No fee is due.'));
+    live_notify('all', 'book:' . $bookId);
+    live_notify('admins', 'admin');
+    return ['', $loan];
+}
+
+// True while a borrowed book is waiting at the desk for the member to pick it up: not handed over yet,
+// not returned and not handed in. These loans show the member's desk QR code.
+function loan_to_collect(array $loan): bool
+{
+    return empty($loan['collected_at']) && empty($loan['returned_date']) && empty($loan['return_requested_at']);
+}
+
+// A librarian hands a borrowed book over at the desk, after checking the member's desk QR code.
+// Only from the collection date chosen when borrowing. Returns [error or '', the loan with the member].
+function collect_loan(int $loanId): array
+{
+    $loan = db_one('SELECT l.*, b.title, u.full_name, u.email FROM loans l JOIN books b ON b.id = l.book_id
+                    JOIN users u ON u.id = l.user_id WHERE l.id = ?', [$loanId]);
+    if (!$loan || !loan_to_collect($loan)) {
+        return ['That book is not waiting to be collected. It may already have been handed over.', []];
+    }
+    if ($loan['collection_date'] > date('Y-m-d')) {
+        return [$loan['title'] . ' can only be collected from ' . long_date($loan['collection_date']) . ', the day ' . first_name($loan) . ' chose.', []];
+    }
+    $changed = db_exec("UPDATE loans SET collected_at = NOW() WHERE id = ? AND collected_at IS NULL AND status <> 'returned'
+                        AND return_requested_at IS NULL AND collection_date <= CURDATE()", [$loanId]);
+    if ($changed !== 1) {
+        return ['That book was already handed over.', []];
+    }
+    $loan['collected_at'] = date('Y-m-d H:i:s');
+    send_mail($loan['email'], 'Collected: ' . $loan['title'] . ', due back ' . short_date($loan['due_date']),
+        mail_body(first_name($loan), 'You collected ' . $loan['title'] . ' at the front desk today. Enjoy it.'
+            . "\n\nIt is due back on " . long_date($loan['due_date']) . '. Late returns cost ' . money(LATE_FEE_PER_DAY) . ' a day.'));
+    live_notify((int) $loan['user_id'], 'me', 'You collected ' . $loan['title'] . '. It is due back on ' . long_date($loan['due_date']) . '.');
+    live_notify('admins', 'admin');
+    return ['', $loan];
+}
+
+// A librarian could not find a handed in book. The loan goes back to the member as it was, so the
+// due date and any late fee carry on as if it had never been handed in.
+// Returns [error or '', the loan with the member's name and email].
+function reject_return(int $loanId): array
+{
+    $loan = db_one('SELECT l.*, b.title, u.full_name, u.email FROM loans l JOIN books b ON b.id = l.book_id
+                    JOIN users u ON u.id = l.user_id WHERE l.id = ?', [$loanId]);
+    if (!$loan || db_exec("UPDATE loans SET return_requested_at = NULL WHERE id = ? AND status <> 'returned' AND return_requested_at IS NOT NULL", [$loanId]) !== 1) {
+        return ['That return was already handled.', []];
+    }
+    send_mail($loan['email'], 'We could not find ' . $loan['title'],
+        mail_body(first_name($loan), 'You marked ' . $loan['title'] . " as handed in, but a librarian could not find it at the desk.\n\n"
+            . 'It is still on your account, due back on ' . long_date($loan['due_date']) . '. Please bring it to the front desk, or reply if you think this is a mistake.'));
+    $loan['return_requested_at'] = null;
+    live_notify((int) $loan['user_id'], 'me', 'A librarian could not find ' . $loan['title'] . ' at the desk, so it is back on your loans.');
+    live_notify('admins', 'admin');
     return ['', $loan];
 }
 
@@ -493,6 +655,9 @@ function renew_problem(array $loan): string
     $today = date('Y-m-d');
     if ($loan['returned_date'] || $loan['status'] === 'returned') {
         return 'That loan has already been returned.';
+    }
+    if (!empty($loan['return_requested_at'])) {
+        return 'You have handed it in, so it cannot be renewed.';
     }
     if ($loan['collection_date'] > $today) {
         return 'A reservation can be renewed once you have collected the book.';
@@ -543,5 +708,7 @@ function renew_loan(array $user, int $loanId): array
         mail_body(first_name($user), 'Your loan of ' . $loan['title'] . ' is renewed for another ' . LOAN_DAYS . " days.\n\n"
             . '  New due date: ' . long_date($loan['due_date']) . "\n\n"
             . 'Each loan can be renewed ' . (MAX_RENEWALS === 1 ? 'once' : MAX_RENEWALS . ' times') . ', so please bring it back by then.'));
+    live_notify((int) $user['id'], 'me');
+    live_notify('all', 'book:' . $bookId);
     return ['', $loan];
 }

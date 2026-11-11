@@ -1,5 +1,84 @@
 # Changelog
 
+## 2026-11-10: The QR code is now for collecting a book
+
+The desk QR code moved from returns to collection. A member who borrows a book sees **Show QR code to
+collect** on My Account; at the desk the librarian scans it (or types the code) in the new **Collection
+desk** on the admin dashboard and presses **Hand over the book**. New column `loans.collected_at`
+(`ALTER TABLE loans ADD COLUMN collected_at DATETIME NULL AFTER due_date;`); the seed marks loans whose
+collection day has passed as collected. Returns keep their own flow (Return, then Returns to check).
+Removed: Take it back now, and the QR codes on room bookings. The QR link uses the laptop's network
+address when the site is opened as localhost, so a phone can open it. Tests T110 to T112 rewritten;
+Base 74 of 74, API 44 of 44, browser 74 of 74.
+
+## 2026-11-10: Fix: the onboarding tour stopped at step 2
+
+With Vue on, the tour highlighted a book card on Browse just before Vue replaced the list, so the
+highlighted card vanished and the dimmed page blocked every click. On the book page, Borrow is a button
+with Vue (not a link to `borrow.php`), so the borrow steps were skipped. `assets/js/tour.js` now watches
+the page and moves the highlight to the element that replaced it, and the borrow steps also work with the
+date picker on the book page. New browser tests K01 (with Vue) and K02 (Vue blocked) walk the whole tour.
+FR-50 to FR-55 added to `docs/REQUIREMENTS.md` for the features below.
+
+## 2026-11-10: Loan reminder emails, desk codes and QR codes
+
+- **Loan reminders** (`includes/reminders.php`, new table `loan_reminders`): emails when a reserved book
+  is ready to collect, 2 days before the due date (with whether it can still be renewed), on the due
+  day, and when overdue (fee so far; again every `REMIND_OVERDUE_DAYS`). Each is sent once and only
+  recorded when the mail server accepted it. Sent by **Send reminders now** on the admin dashboard
+  (with a list of who gets one) or `tools/send-reminders.php` from Windows Task Scheduler. An open
+  page of the member also shows the reminder through live updates.
+- **Real email:** `MAIL_TRANSPORT = 'gmail'` sends through Gmail SMTP with PHPMailer (`lib/PHPMailer`),
+  settings in `config/mail.local.php` (ignored by git). `MAIL_DEMO_INBOX` collects the mail of the
+  @localhost demo accounts in one real inbox. Mercury stays the default.
+- **Desk codes and QR codes** (`includes/desk.php`): each loan and room booking on My Account (Base and
+  Vue panel) has a signed code such as `L59-7F3A9C` and a QR code (SVG, `lib/qrcode.php`). The admin
+  dashboard has a **Desk check**: type or scan the code to see the loan or booking, then Confirm returned,
+  Not received, or **Take it back now** (`desk_take_back()`).
+- `tools/demo-reset.php`: Budy's Atomic Habits is now due in 2 days, so the demo can send Budy a reminder
+  before renewing it.
+- Existing databases need the new table (see `sql/schema.sql`, `CREATE TABLE loan_reminders`).
+- Tests: T110 to T113 added. Base e2e **74 of 74**, API **44 of 44**, browser **72 of 72**.
+
+## 2026-11-10: Live updates with Node.js + Express
+
+Pages used to show changes made by someone else only after Ctrl+R. Now a small Node.js + Express
+server pushes "something changed" to the pages people have open, and they update in place.
+
+- **Server:** `live/server.js` (Express 5). Pages connect with Server-Sent Events (`GET /events`) using a
+  pass signed by PHP (HMAC-SHA256, 2 hours). PHP reports changes with `POST /notify` (local calls with
+  the shared secret only). It also tells every page when the library opens or closes. It stores nothing.
+- **PHP:** `includes/live.php` (`live_token()`, `live_notify()`, sent after the request finishes).
+  Loans, queues, returns, renewals, fees, submissions, room bookings and room changes call
+  `live_notify()`. A live re-read of a page (`X-BookNest-Live: 1`) does not use up flash messages or
+  form values and does not reset the 30 minute idle timer.
+- **Browser:** `assets/js/live.js` re-reads the page and swaps the parts marked `data-live` (tiles,
+  loans, queue, recent returns, bookings, admin sections, book availability, room slots, opening hours).
+  Vue screens reload their own data on the `booknest:live` event. Messages for the member or the staff
+  appear in a notice in the corner. `forms.js` now exposes `BookNestForms.enhance()` for swapped parts.
+- **Without the server** the site works exactly as before (one refused connection, then no retries).
+- Tests: browser group `live` added (L01 to L04: hand-in reaches the admin, confirm and Mark paid reach
+  the member, no reloads, no errors); C05 and F stale-tab tests block live updates so they stay stale.
+  Base e2e **70 of 70** (with and without the server), API **44 of 44**, browser **72 of 72**.
+
+## 2026-11-10: A librarian confirms every return
+
+Returning a book used to finish the loan at once, on the member's word. Now the member hands it in and
+a librarian checks it is really back.
+
+- **Member:** Return marks a collected book as handed in (`loans.return_requested_at`). It moves to
+  "Handed in, waiting for a librarian" on My Account (Base list and Vue panel). It no longer counts as on
+  loan or overdue for borrowing, cannot be renewed, and its late fee stops on the day it was handed in.
+  Cancelling a reservation that was never collected still happens at once.
+- **Admin:** new "Returns to check" section on the dashboard with **Confirm returned** (the loan becomes
+  returned, the copy goes to the queue, the fee moves to Late fees to settle) and **Not received** (the
+  loan goes back to the member as it was). Both email the member.
+- Code: `confirm_return()`, `reject_return()`, `return_message()` and `loan_end_date()` in
+  `includes/loans.php`; new column in `sql/schema.sql`. Existing databases need:
+  `ALTER TABLE loans ADD COLUMN return_requested_at DATETIME NULL AFTER returned_date;`
+- Tests: T14, T61, A21, A22, C03 and H03 updated for the new flow; T106 added (Not received).
+  Base e2e **70 of 70**, API **44 of 44**, browser **68 of 68**, 0 PHP errors.
+
 ## 2026-11-03: Modern Enhancement with Vue 3, branch `modern-vue` (Viony)
 
 Vue 3 on top of the Base Version, by progressive enhancement. Full write-up in `docs/MODERN.md`.

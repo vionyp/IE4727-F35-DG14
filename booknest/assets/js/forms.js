@@ -227,11 +227,23 @@
     update();
   }
 
-  each(document.querySelectorAll('form[data-validate]'), setupValidation);
-  each(document.querySelectorAll('[data-tabs]'), setupTabs);
-  each(document.querySelectorAll('form[data-confirm]'), setupConfirm);
-  each(document.querySelectorAll('textarea[maxlength][data-count]'), setupCounter);
-  each(document.querySelectorAll('[data-uppercase]'), setupUppercase);
-  each(document.querySelectorAll('[data-strength]'), setupStrength);
-  each(document.querySelectorAll('[data-cover-preview]'), setupCoverPreview);
+  // Sets up every form feature inside root. live.js calls it again for a part of the page it has just
+  // swapped in, so new "Return" or "Cancel" buttons get their confirm step too.
+  function enhance(root) {
+    var all = function (sel) {
+      var list = Array.prototype.slice.call(root.querySelectorAll(sel));
+      if (root.matches && root.matches(sel)) { list.unshift(root); }
+      return list;
+    };
+    each(all('form[data-validate]'), setupValidation);
+    each(all('[data-tabs]'), setupTabs);
+    each(all('form[data-confirm]'), setupConfirm);
+    each(all('textarea[maxlength][data-count]'), setupCounter);
+    each(all('[data-uppercase]'), setupUppercase);
+    each(all('[data-strength]'), setupStrength);
+    each(all('[data-cover-preview]'), setupCoverPreview);
+  }
+
+  enhance(document);
+  window.BookNestForms = { enhance: enhance };
 })();
